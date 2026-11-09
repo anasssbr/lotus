@@ -65,6 +65,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -117,6 +118,24 @@ import com.materialkolor.PaletteStyle
 import com.materialkolor.ktx.toHct
 import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
+
+@OptIn(ExperimentalFoundationApi::class)
+private val GridStatesSaver = listSaver<Map<Tab, LazyGridState>, String>(
+    save = { gridStates ->
+        gridStates.map { (tab, state) ->
+            "${tab.name}|${state.firstVisibleItemIndex}|${state.firstVisibleItemScrollOffset}"
+        }
+    },
+    restore = { saved ->
+        saved.associate { entry ->
+            val parts = entry.split('|')
+            Tab.valueOf(parts[0]) to LazyGridState(
+                firstVisibleItemIndex = parts[1].toInt(),
+                firstVisibleItemScrollOffset = parts[2].toInt()
+            )
+        }
+    }
+)
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -282,7 +301,6 @@ fun PlayerScreen(
                         val genrePlaylists by viewModel.genrePlaylists.collectAsState()
                         val folderPlaylists by viewModel.folderPlaylists.collectAsState()
 
-                        val gridState = rememberLazyGridState()
                         val gridPlaylists by viewModel.settings.gridPlaylists.collectAsState()
 
                         val tabs by viewModel.settings.tabs.collectAsState()
@@ -290,7 +308,13 @@ fun PlayerScreen(
                             mutableStateOf(viewModel.settings.defaultTab)
                         }
 
-                        val shouldShowLocateButton by remember(currentTrack, trackList) {
+                        val gridStates = rememberSaveable(saver = GridStatesSaver) {
+                            tabs.associateWith { LazyGridState() }
+                        }
+                        val fallbackGridState = rememberLazyGridState()
+                        val gridState = gridStates[selectedTab] ?: fallbackGridState
+
+                        val shouldShowLocateButton by remember(currentTrack, trackList, gridState) {
                             derivedStateOf {
                                 selectedTab == Tab.Tracks &&
                                         currentTrack != null &&
@@ -299,7 +323,7 @@ fun PlayerScreen(
                                         } == null
                             }
                         }
-                        onLocateClick = remember(currentTrack, trackList) {
+                        onLocateClick = remember(currentTrack, trackList, gridState) {
                             {
                                 val currentTrackIndex = trackList.indexOf(currentTrack)
                                 val preAnimateItemIndex = if (
@@ -315,7 +339,7 @@ fun PlayerScreen(
                             showLocateButton = shouldShowLocateButton
                         }
 
-                        val isScrolledEnough by remember {
+                        val isScrolledEnough by remember(gridState) {
                             derivedStateOf {
                                 gridState.firstVisibleItemIndex >= 5
                             }
@@ -330,7 +354,7 @@ fun PlayerScreen(
                         }
 
                         MainPlayerScreen(
-                            gridState = gridState,
+                            gridStates = gridStates,
                             topBarTabs = tabs,
                             defaultTab = viewModel.settings.defaultTab,
                             onTabChange = {
@@ -444,6 +468,11 @@ fun PlayerScreen(
                             },
                             onSettingsClick = {
                                 viewModel.onEvent(PlayerScreenEvent.OnSettingsClick)
+                            },
+                            onCreatePlaylistClick = {
+                                showAddToOrCreatePlaylistSheet = true
+                                showCreatePlaylistOnly = true
+                                tracksToAddToPlaylist = null
                             },
                             onBulkTagFixClick = {
                                 viewModel.onEvent(PlayerScreenEvent.OnOpenBulkTagFixClick)
@@ -916,6 +945,7 @@ fun PlayerScreen(
                         createOnly = showCreatePlaylistOnly,
                         onDismissRequest = {
                             showAddToOrCreatePlaylistSheet = false
+                            showCreatePlaylistOnly = false
                         },
                         onCreateClick = {
                             viewModel.onEvent(PlayerScreenEvent.OnCreatePlaylistClick(it))
@@ -954,7 +984,7 @@ fun PlayerScreen(
 
 @Composable
 fun MainPlayerScreen(
-    gridState: LazyGridState = rememberLazyGridState(),
+    gridStates: Map<Tab, LazyGridState>,
     topBarTabs: List<Tab>,
     defaultTab: Tab,
     onTabChange: (Tab) -> Unit = {},
@@ -986,6 +1016,7 @@ fun MainPlayerScreen(
     replaceSearchWithFilter: Boolean,
     gridPlaylists: Boolean,
     onGridPlaylistsClick: () -> Unit,
+    onCreatePlaylistClick: () -> Unit,
     onBulkTagFixClick: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
@@ -1024,7 +1055,7 @@ fun MainPlayerScreen(
     }
 
     LazyGridWithCollapsibleTabsTopBar(
-        gridState = gridState,
+        gridStates = gridStates,
         topBarTabs = topBarTabs,
         defaultSelectedTab = defaultTab,
         onTabChange = {
@@ -1097,6 +1128,19 @@ fun MainPlayerScreen(
                             }
 
                             Row {
+                                if (tab == Tab.Playlists) {
+                                    IconButton(
+                                        onClick = onCreatePlaylistClick
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.AutoMirrored.Rounded.PlaylistAdd,
+                                            contentDescription = context.resources.getString(
+                                                R.string.create_playlist
+                                            )
+                                        )
+                                    }
+                                }
+
                                 if (tab != Tab.Tracks) {
                                     IconButton(
                                         onClick = onGridPlaylistsClick

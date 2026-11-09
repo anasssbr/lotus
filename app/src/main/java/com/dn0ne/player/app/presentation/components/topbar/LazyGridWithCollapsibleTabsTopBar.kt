@@ -6,13 +6,17 @@ import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -50,7 +54,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -96,7 +99,7 @@ fun LazyGridWithCollapsibleTabsTopBar(
     maxTopBarHeightLandscape: Dp = 150.dp,
     collapsedByDefault: Boolean = false,
     collapseFraction: (Float) -> Unit = {},
-    gridState: LazyGridState = rememberLazyGridState(),
+    gridStates: Map<Tab, LazyGridState> = emptyMap(),
     contentPadding: PaddingValues = PaddingValues(0.dp),
     contentHorizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
     contentVerticalArrangement: Arrangement.Vertical = Arrangement.Top,
@@ -107,6 +110,18 @@ fun LazyGridWithCollapsibleTabsTopBar(
 ) {
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
+
+    var selectedTab by rememberSaveable {
+        mutableStateOf(defaultSelectedTab)
+    }
+
+    val fallbackGridState = rememberLazyGridState()
+    val resolvedGridStates = remember(topBarTabs, gridStates) {
+        if (gridStates.isEmpty()) {
+            topBarTabs.associateWith { LazyGridState() }
+        } else gridStates
+    }
+    fun gridStateOf(tab: Tab): LazyGridState = resolvedGridStates[tab] ?: fallbackGridState
 
     val isInLandscapeOrientation = isSystemInLandscapeOrientation()
     val minTopBarHeight = remember { with(density) { minTopBarHeight.toPx() } }
@@ -133,12 +148,13 @@ fun LazyGridWithCollapsibleTabsTopBar(
         )
     }
 
-    val topBarScrollConnection = remember {
+    val topBarScrollConnection = remember(resolvedGridStates) {
         return@remember object : NestedScrollConnection {
             override fun onPreScroll(
                 available: Offset,
                 source: NestedScrollSource
             ): Offset {
+                val gridState = gridStateOf(selectedTab)
                 val previousHeight = topBarHeight.value
                 val newHeight = if (gridState.firstVisibleItemIndex >= 0 && available.y < 0) {
                     (previousHeight + available.y).coerceIn(
@@ -175,15 +191,12 @@ fun LazyGridWithCollapsibleTabsTopBar(
         }
     }
 
-    var selectedTab by rememberSaveable {
-        mutableStateOf(defaultSelectedTab)
-    }
     var showTabRow by remember {
         mutableStateOf(false)
     }
-    val isColumnScrollInProgress by remember {
+    val isColumnScrollInProgress by remember(resolvedGridStates) {
         derivedStateOf {
-            gridState.isScrollInProgress
+            gridStateOf(selectedTab).isScrollInProgress
         }
     }
 
@@ -202,19 +215,41 @@ fun LazyGridWithCollapsibleTabsTopBar(
                 modifier = Modifier
                     .height(with(density) { topBarHeight.value.toDp() })
             )
+            BackHandler(enabled = selectedTab != defaultSelectedTab) {
+                selectedTab = defaultSelectedTab
+                onTabChange(defaultSelectedTab)
+            }
+
             AnimatedContent(
                 targetState = selectedTab,
+                transitionSpec = {
+                    val initialIndex = topBarTabs.indexOf(initialState)
+                    val targetIndex = topBarTabs.indexOf(targetState)
+                    val direction = if (targetIndex >= initialIndex) 1 else -1
+
+                    (slideInHorizontally(
+                        animationSpec = tween(
+                            durationMillis = 300,
+                            easing = FastOutSlowInEasing
+                        ),
+                        initialOffsetX = { fullWidth -> direction * fullWidth / 8 }
+                    ) + fadeIn(animationSpec = tween(durationMillis = 220)))
+                        .togetherWith(
+                            slideOutHorizontally(
+                                animationSpec = tween(
+                                    durationMillis = 300,
+                                    easing = FastOutSlowInEasing
+                                ),
+                                targetOffsetX = { fullWidth -> -direction * fullWidth / 8 }
+                            ) + fadeOut(animationSpec = tween(durationMillis = 220))
+                        )
+                },
                 label = "column-tab-animation",
             ) { tabIndex ->
-                if (selectedTab != defaultSelectedTab) {
-                    BackHandler {
-                        selectedTab = defaultSelectedTab
-                        onTabChange(defaultSelectedTab)
-                    }
-                }
+                val tabGridState = gridStateOf(tabIndex)
 
                 LazyVerticalGridScrollbar(
-                    state = gridState,
+                    state = tabGridState,
                     settings = ScrollbarSettings(
                         enabled = enableScrollbar,
                         thumbUnselectedColor = MaterialTheme.colorScheme.surfaceContainer,
@@ -223,7 +258,7 @@ fun LazyGridWithCollapsibleTabsTopBar(
                 ) {
                     LazyVerticalGrid(
                         columns = gridCells(tabIndex),
-                        state = gridState,
+                        state = tabGridState,
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(contentPadding),
@@ -487,53 +522,48 @@ fun TabRowTitle(
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             val context = LocalContext.current
-            key("$selectedTab-$tab") {
-                Text(
-                    text = context.resources.getString(tab.titleResId),
-                    style = style,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier
-                        .sharedBounds(
-                            sharedContentState = rememberSharedContentState(tab),
-                            animatedVisibilityScope = animatedVisibilityScope,
-                            boundsTransform = { _, _ ->
-                                boundTransformAnimationSpec
-                            }
-                        )
-                )
-
-                val primary = MaterialTheme.colorScheme.primary
-                val color by remember {
-                    mutableStateOf(
-                        if (selectedTab == tab) {
-                            primary
-                        } else Color.Transparent
+            Text(
+                text = context.resources.getString(tab.titleResId),
+                style = style,
+                textAlign = TextAlign.Center,
+                modifier = Modifier
+                    .sharedBounds(
+                        sharedContentState = rememberSharedContentState(tab),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        boundsTransform = { _, _ ->
+                            boundTransformAnimationSpec
+                        }
                     )
-                }
-                Box(
-                    modifier = Modifier
-                        .sharedBounds(
-                            sharedContentState = rememberSharedContentState(
-                                if (color != Color.Transparent) {
-                                    "indicator"
-                                } else {
-                                    "invisible-indicator"
-                                }
-                            ),
-                            animatedVisibilityScope = animatedVisibilityScope,
-                            resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
-                            boundsTransform = { _, _ ->
-                                boundTransformAnimationSpec
+            )
+
+            val primary = MaterialTheme.colorScheme.primary
+            val color = if (selectedTab == tab) {
+                primary
+            } else Color.Transparent
+
+            Box(
+                modifier = Modifier
+                    .sharedBounds(
+                        sharedContentState = rememberSharedContentState(
+                            if (color != Color.Transparent) {
+                                "indicator"
+                            } else {
+                                "invisible-indicator"
                             }
-                        )
-                        .fillMaxWidth()
-                        .height(2.dp)
-                        .clip(ShapeDefaults.ExtraLarge)
-                        .background(
-                            color = color
-                        )
-                )
-            }
+                        ),
+                        animatedVisibilityScope = animatedVisibilityScope,
+                        resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
+                        boundsTransform = { _, _ ->
+                            boundTransformAnimationSpec
+                        }
+                    )
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .clip(ShapeDefaults.ExtraLarge)
+                    .background(
+                        color = color
+                    )
+            )
         }
     }
 }
