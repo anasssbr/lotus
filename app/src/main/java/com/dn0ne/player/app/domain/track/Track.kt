@@ -26,4 +26,11 @@ data class Track(
 )
 
 val Track.hasMissingAlbum: Boolean
-    get() = album.isNullOrBlank() || album.equals("<unknown>", ignoreCase = true)
+    get() {
+        val album = album?.trim() ?: return true
+        val title = title?.trim()
+
+        return album.isEmpty() ||
+                album.equals("<unknown>", ignoreCase = true) ||
+                (!title.isNullOrBlank() && album.equals(title, ignoreCase = true))
+    }
