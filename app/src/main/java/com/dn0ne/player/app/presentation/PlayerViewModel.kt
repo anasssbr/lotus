@@ -29,11 +29,15 @@ import com.dn0ne.player.app.domain.sort.sortedBy
 import com.dn0ne.player.app.domain.track.Playlist
 import com.dn0ne.player.app.domain.track.Track
 import com.dn0ne.player.app.domain.track.format
+import com.dn0ne.player.app.domain.track.hasMissingAlbum
 import com.dn0ne.player.app.presentation.PlayerScreenEvent.*
 import com.dn0ne.player.app.presentation.components.playback.PlaybackState
 import com.dn0ne.player.app.presentation.components.settings.SettingsSheetState
 import com.dn0ne.player.app.presentation.components.snackbar.SnackbarController
 import com.dn0ne.player.app.presentation.components.snackbar.SnackbarEvent
+import com.dn0ne.player.app.presentation.components.trackinfo.BulkTagFixState
+import com.dn0ne.player.app.presentation.components.trackinfo.BulkTagFixStatus
+import com.dn0ne.player.app.presentation.components.trackinfo.BulkTagFixSuggestion
 import com.dn0ne.player.app.presentation.components.trackinfo.ChangesSheetState
 import com.dn0ne.player.app.presentation.components.trackinfo.InfoSearchSheetState
 import com.dn0ne.player.app.presentation.components.trackinfo.LyricsControlSheetState
@@ -45,6 +49,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
@@ -227,6 +232,14 @@ class PlayerViewModel(
 
     private val _pendingMetadata = Channel<Pair<Track, Metadata>>()
     val pendingMetadata = _pendingMetadata.receiveAsFlow()
+
+    private var bulkTagFixJob: Job? = null
+    private val _bulkTagFixState = MutableStateFlow(BulkTagFixState())
+    val bulkTagFixState = _bulkTagFixState.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000L),
+        initialValue = _bulkTagFixState.value
+    )
 
     private val _pendingTrackUris = Channel<Uri>()
 
@@ -916,6 +929,144 @@ class PlayerViewModel(
                 }
             }
 
+            OnOpenBulkTagFixClick -> {
+                bulkTagFixJob?.cancel()
+                bulkTagFixJob = null
+
+                val tracks = _trackList.value.fastFilter { track ->
+                    track.hasMissingAlbum
+                }
+
+                _bulkTagFixState.update {
+                    BulkTagFixState(
+                        suggestions = tracks.fastMap { track ->
+                            BulkTagFixSuggestion(track = track)
+                        }
+                    )
+                }
+            }
+
+            OnCloseBulkTagFixClick -> {
+                bulkTagFixJob?.cancel()
+                bulkTagFixJob = null
+
+                _bulkTagFixState.update {
+                    it.copy(
+                        isScanning = false,
+                        suggestions = it.suggestions.map { suggestion ->
+                            if (suggestion.status == BulkTagFixStatus.Searching) {
+                                suggestion.copy(status = BulkTagFixStatus.Pending)
+                            } else suggestion
+                        }
+                    )
+                }
+            }
+
+            OnBulkTagFixScanClick -> {
+                val currentState = _bulkTagFixState.value
+
+                if (!currentState.isScanning && currentState.suggestions.isNotEmpty()) {
+                    bulkTagFixJob?.cancel()
+                    bulkTagFixJob = viewModelScope.launch {
+                        _bulkTagFixState.update {
+                            it.copy(
+                                isScanning = true,
+                                completedCount = 0,
+                                suggestions = it.suggestions.map { suggestion ->
+                                    suggestion.copy(
+                                        status = BulkTagFixStatus.Pending,
+                                        searchResult = null
+                                    )
+                                }
+                            )
+                        }
+
+                        try {
+                            _bulkTagFixState.value.suggestions.forEachIndexed { index, suggestion ->
+                                ensureActive()
+
+                                _bulkTagFixState.update { state ->
+                                    state.copy(
+                                        suggestions = state.suggestions.mapIndexed { i, item ->
+                                            if (i == index) {
+                                                item.copy(status = BulkTagFixStatus.Searching)
+                                            } else item
+                                        }
+                                    )
+                                }
+
+                                val query = buildMetadataQuery(suggestion.track)
+                                val updatedSuggestion = if (query == null) {
+                                    suggestion.copy(status = BulkTagFixStatus.Skipped)
+                                } else {
+                                    when (val result = metadataProvider.searchMetadata(
+                                        query = query,
+                                        trackDuration = suggestion.track.duration.toLong()
+                                    )) {
+                                        is Result.Success -> {
+                                            val match = result.data.firstOrNull {
+                                                it.album.isNotBlank()
+                                            }
+
+                                            if (match == null) {
+                                                suggestion.copy(status = BulkTagFixStatus.NotFound)
+                                            } else {
+                                                suggestion.copy(
+                                                    status = BulkTagFixStatus.Found,
+                                                    searchResult = match
+                                                )
+                                            }
+                                        }
+
+                                        is Result.Error -> {
+                                            if (result.error == DataError.Network.NoInternet ||
+                                                result.error == DataError.Network.ServiceUnavailable
+                                            ) {
+                                                SnackbarController.sendEvent(
+                                                    SnackbarEvent(
+                                                        message = R.string.no_internet
+                                                    )
+                                                )
+                                                return@launch
+                                            }
+
+                                            suggestion.copy(status = BulkTagFixStatus.NotFound)
+                                        }
+                                    }
+                                }
+
+                                ensureActive()
+
+                                _bulkTagFixState.update { state ->
+                                    state.copy(
+                                        completedCount = state.completedCount + 1,
+                                        suggestions = state.suggestions.mapIndexed { i, item ->
+                                            if (i == index) updatedSuggestion else item
+                                        }
+                                    )
+                                }
+                            }
+                        } finally {
+                            _bulkTagFixState.update { state ->
+                                state.copy(
+                                    isScanning = false,
+                                    suggestions = state.suggestions.map { suggestion ->
+                                        if (suggestion.status == BulkTagFixStatus.Searching) {
+                                            suggestion.copy(status = BulkTagFixStatus.Pending)
+                                        } else suggestion
+                                    }
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            OnBulkTagFixCancelClick -> {
+                bulkTagFixJob?.cancel()
+                bulkTagFixJob = null
+            }
+
             is OnPlaylistSelection -> {
                 _selectedPlaylist.update {
                     event.playlist
@@ -1528,6 +1679,45 @@ class PlayerViewModel(
                     message = R.string.imported_successfully
                 )
             )
+        }
+    }
+
+    private fun buildMetadataQuery(track: Track): String? {
+        val title = track.title?.trim().orEmpty()
+        val artist = track.artist?.trim().orEmpty()
+
+        if (title.isBlank() && artist.isBlank()) return null
+
+        return buildString {
+            if (title.isNotBlank()) {
+                append("recording:\"")
+                append(escapeMetadataQuery(title))
+                append('"')
+            }
+
+            if (artist.isNotBlank()) {
+                if (isNotEmpty()) append(" AND ")
+
+                append("artist:\"")
+                append(escapeMetadataQuery(artist))
+                append('"')
+            }
+        }
+    }
+
+    private fun escapeMetadataQuery(value: String): String {
+        return buildString {
+            value.forEach { char ->
+                when (char) {
+                    '\\', '"', '+', '-', '!', '(', ')', '{', '}', '[', ']',
+                    '^', '~', '*', '?', ':', '/', '&', '|' -> {
+                        append('\\')
+                        append(char)
+                    }
+
+                    else -> append(char)
+                }
+            }
         }
     }
 

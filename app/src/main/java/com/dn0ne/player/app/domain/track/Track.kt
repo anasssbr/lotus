@@ -24,3 +24,6 @@ data class Track(
     val trackNumber: String? = null,
     val bitrate: String? = null
 )
+
+val Track.hasMissingAlbum: Boolean
+    get() = album.isNullOrBlank() || album.equals("<unknown>", ignoreCase = true)

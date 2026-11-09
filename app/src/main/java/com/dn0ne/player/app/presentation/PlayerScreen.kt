@@ -34,6 +34,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.AddToQueue
+import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.GridView
@@ -106,6 +107,7 @@ import com.dn0ne.player.app.presentation.components.topbar.LazyGridWithCollapsib
 import com.dn0ne.player.app.presentation.components.topbar.Tab
 import com.dn0ne.player.app.presentation.components.topbar.TopBarContent
 import com.dn0ne.player.app.presentation.components.trackList
+import com.dn0ne.player.app.presentation.components.trackinfo.BulkTagFixScreen
 import com.dn0ne.player.app.presentation.components.trackinfo.SearchField
 import com.dn0ne.player.app.presentation.components.trackinfo.TrackInfoSheet
 import com.kmpalette.color
@@ -443,6 +445,10 @@ fun PlayerScreen(
                             onSettingsClick = {
                                 viewModel.onEvent(PlayerScreenEvent.OnSettingsClick)
                             },
+                            onBulkTagFixClick = {
+                                viewModel.onEvent(PlayerScreenEvent.OnOpenBulkTagFixClick)
+                                navController.navigate(PlayerRoutes.BulkTagFix)
+                            },
                             replaceSearchWithFilter = replaceSearchWithFilter,
                             gridPlaylists = gridPlaylists,
                             onGridPlaylistsClick = {
@@ -450,6 +456,25 @@ fun PlayerScreen(
                                     !gridPlaylists
                                 )
                             }
+                        )
+                    }
+
+                    composable<PlayerRoutes.BulkTagFix> {
+                        val bulkTagFixState by viewModel.bulkTagFixState.collectAsState()
+
+                        BulkTagFixScreen(
+                            state = bulkTagFixState,
+                            onBackClick = {
+                                viewModel.onEvent(PlayerScreenEvent.OnCloseBulkTagFixClick)
+                                navController.popBackStack()
+                            },
+                            onScanClick = {
+                                viewModel.onEvent(PlayerScreenEvent.OnBulkTagFixScanClick)
+                            },
+                            onCancelScanClick = {
+                                viewModel.onEvent(PlayerScreenEvent.OnBulkTagFixCancelClick)
+                            },
+                            modifier = Modifier.fillMaxSize()
                         )
                     }
 
@@ -961,6 +986,7 @@ fun MainPlayerScreen(
     replaceSearchWithFilter: Boolean,
     gridPlaylists: Boolean,
     onGridPlaylistsClick: () -> Unit,
+    onBulkTagFixClick: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1083,6 +1109,19 @@ fun MainPlayerScreen(
                                                 if (gridPlaylists) {
                                                     R.string.enable_list_view
                                                 } else R.string.enable_grid_view
+                                            )
+                                        )
+                                    }
+                                }
+
+                                if (tab == Tab.Tracks) {
+                                    IconButton(
+                                        onClick = onBulkTagFixClick
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.AutoFixHigh,
+                                            contentDescription = context.resources.getString(
+                                                R.string.fix_missing_album_info
                                             )
                                         )
                                     }
@@ -1743,4 +1782,7 @@ private sealed interface PlayerRoutes {
 
     @Serializable
     data object MutablePlaylist : PlayerRoutes
+
+    @Serializable
+    data object BulkTagFix : PlayerRoutes
 }

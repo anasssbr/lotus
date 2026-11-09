@@ -38,6 +38,11 @@ sealed interface PlayerScreenEvent {
     data object OnRestoreCoverArtClick: PlayerScreenEvent
     data class OnConfirmMetadataEditClick(val metadata: Metadata): PlayerScreenEvent
 
+    data object OnOpenBulkTagFixClick: PlayerScreenEvent
+    data object OnCloseBulkTagFixClick: PlayerScreenEvent
+    data object OnBulkTagFixScanClick: PlayerScreenEvent
+    data object OnBulkTagFixCancelClick: PlayerScreenEvent
+
     data class OnPlaylistSelection(val playlist: Playlist): PlayerScreenEvent
 
     data class OnTrackSortChange(

@@ -150,6 +150,19 @@
     <string name="artwork_change_note">If the artwork for the album of this track is present on your device, it will be used regardless of the selected artwork.</string>
     <string name="cover_art_from_gallery_note">To display cover art from the gallery you may need to restart the app or device.</string>
 
+    <!-- Bulk tag fixer -->
+    <string name="fix_missing_album_info">Fix missing album info</string>
+    <string name="missing_album_info">Missing album info</string>
+    <string name="missing_album_info_explain">Find album details for tracks that don\'t have album information. Matches come from MusicBrainz, so looking up many tracks can take a while.</string>
+    <string name="find_matches">Find matches</string>
+    <string name="stop_scanning">Stop</string>
+    <string name="no_tracks_missing_album_info">No tracks with missing album info</string>
+    <string name="bulk_tag_fix_progress">%1$d of %2$d</string>
+    <string name="bulk_tag_fix_pending">Not scanned yet</string>
+    <string name="bulk_tag_fix_searching">Looking up...</string>
+    <string name="bulk_tag_fix_not_found">No match found</string>
+    <string name="bulk_tag_fix_skipped">Missing title or artist - skipped</string>
+
     <!-- Changes errors -->
     <string name="failed_to_load_cover_art_album_id_corrupted">Failed to load cover art. Looks like album id for this recording is corrupted.</string>
     <string name="cover_art_not_found">Unfortunately, cover art for this recording was not found.</string>
