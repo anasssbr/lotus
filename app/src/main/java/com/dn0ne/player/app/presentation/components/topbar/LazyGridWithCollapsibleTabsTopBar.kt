@@ -6,17 +6,13 @@ import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
 import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.slideInHorizontally
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -44,6 +40,8 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -59,6 +57,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -123,6 +122,32 @@ fun LazyGridWithCollapsibleTabsTopBar(
     }
     fun gridStateOf(tab: Tab): LazyGridState = resolvedGridStates[tab] ?: fallbackGridState
 
+    val pagerState = rememberPagerState(
+        initialPage = topBarTabs.indexOf(selectedTab).coerceAtLeast(0),
+        pageCount = { topBarTabs.size }
+    )
+
+    LaunchedEffect(pagerState, topBarTabs) {
+        snapshotFlow { pagerState.settledPage }.collect { page ->
+            val tab = topBarTabs.getOrNull(page) ?: return@collect
+            if (tab != selectedTab) {
+                selectedTab = tab
+                onTabChange(tab)
+            }
+        }
+    }
+
+    fun selectTab(tab: Tab) {
+        val index = topBarTabs.indexOf(tab)
+        if (index < 0) return
+
+        selectedTab = tab
+        onTabChange(tab)
+        coroutineScope.launch {
+            pagerState.animateScrollToPage(index)
+        }
+    }
+
     val isInLandscapeOrientation = isSystemInLandscapeOrientation()
     val minTopBarHeight = remember { with(density) { minTopBarHeight.toPx() } }
     val maxTopBarHeight = remember {
@@ -140,6 +165,20 @@ fun LazyGridWithCollapsibleTabsTopBar(
 
     LaunchedEffect(isInLandscapeOrientation) {
         topBarHeight.snapTo(maxTopBarHeight)
+    }
+
+    val lastSyncedTab = remember { mutableStateOf(selectedTab) }
+    LaunchedEffect(selectedTab) {
+        if (lastSyncedTab.value == selectedTab) return@LaunchedEffect
+        lastSyncedTab.value = selectedTab
+
+        val targetHeight = if (gridStateOf(selectedTab).firstVisibleItemIndex == 0) {
+            maxTopBarHeight
+        } else minTopBarHeight
+        topBarHeight.animateTo(
+            targetValue = targetHeight,
+            animationSpec = spring(stiffness = Spring.StiffnessLow)
+        )
     }
 
     LaunchedEffect(topBarHeight.value) {
@@ -216,37 +255,17 @@ fun LazyGridWithCollapsibleTabsTopBar(
                     .height(with(density) { topBarHeight.value.toDp() })
             )
             BackHandler(enabled = selectedTab != defaultSelectedTab) {
-                selectedTab = defaultSelectedTab
-                onTabChange(defaultSelectedTab)
+                selectTab(defaultSelectedTab)
             }
 
-            AnimatedContent(
-                targetState = selectedTab,
-                transitionSpec = {
-                    val initialIndex = topBarTabs.indexOf(initialState)
-                    val targetIndex = topBarTabs.indexOf(targetState)
-                    val direction = if (targetIndex >= initialIndex) 1 else -1
-
-                    (slideInHorizontally(
-                        animationSpec = tween(
-                            durationMillis = 300,
-                            easing = FastOutSlowInEasing
-                        ),
-                        initialOffsetX = { fullWidth -> direction * fullWidth / 8 }
-                    ) + fadeIn(animationSpec = tween(durationMillis = 220)))
-                        .togetherWith(
-                            slideOutHorizontally(
-                                animationSpec = tween(
-                                    durationMillis = 300,
-                                    easing = FastOutSlowInEasing
-                                ),
-                                targetOffsetX = { fullWidth -> -direction * fullWidth / 8 }
-                            ) + fadeOut(animationSpec = tween(durationMillis = 220))
-                        )
-                },
-                label = "column-tab-animation",
-            ) { tabIndex ->
-                val tabGridState = gridStateOf(tabIndex)
+            HorizontalPager(
+                state = pagerState,
+                key = { page -> topBarTabs[page] },
+                beyondViewportPageCount = 1,
+                modifier = Modifier.fillMaxSize()
+            ) { page ->
+                val tab = topBarTabs[page]
+                val tabGridState = gridStateOf(tab)
 
                 LazyVerticalGridScrollbar(
                     state = tabGridState,
@@ -257,7 +276,7 @@ fun LazyGridWithCollapsibleTabsTopBar(
                     )
                 ) {
                     LazyVerticalGrid(
-                        columns = gridCells(tabIndex),
+                        columns = gridCells(tab),
                         state = tabGridState,
                         modifier = Modifier
                             .fillMaxSize()
@@ -265,7 +284,7 @@ fun LazyGridWithCollapsibleTabsTopBar(
                         horizontalArrangement = contentHorizontalArrangement,
                         verticalArrangement = contentVerticalArrangement
                     ) {
-                        tabContent(tabIndex)
+                        tabContent(tab)
 
                         item(
                             span = {
@@ -411,8 +430,7 @@ fun LazyGridWithCollapsibleTabsTopBar(
                                             tab = tab,
                                             style = tabRowTitleTextStyle,
                                             onClick = {
-                                                selectedTab = tab
-                                                onTabChange(tab)
+                                                selectTab(tab)
                                                 showTabRow = false
                                             },
                                             sharedTransitionScope = this@SharedTransitionLayout,
