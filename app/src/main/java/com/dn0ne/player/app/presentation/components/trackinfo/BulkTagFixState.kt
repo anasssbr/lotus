@@ -20,5 +20,6 @@ enum class BulkTagFixStatus {
     Searching,
     Found,
     NotFound,
-    Skipped
+    Skipped,
+    Error
 }

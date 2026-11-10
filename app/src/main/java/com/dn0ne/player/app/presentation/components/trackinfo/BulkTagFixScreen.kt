@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBackIosNew
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.ErrorOutline
 import androidx.compose.material.icons.rounded.SearchOff
 import androidx.compose.material.icons.rounded.SkipNext
 import androidx.compose.material3.Button
@@ -234,6 +235,12 @@ private fun BulkTagFixSuggestionCard(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
+                BulkTagFixStatus.Error -> Icon(
+                    imageVector = Icons.Rounded.ErrorOutline,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+
                 BulkTagFixStatus.Pending -> Unit
             }
         }
@@ -281,6 +288,12 @@ private fun BulkTagFixSuggestionCard(
             BulkTagFixStatus.Skipped -> Text(
                 text = context.resources.getString(R.string.bulk_tag_fix_skipped),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+
+            BulkTagFixStatus.Error -> Text(
+                text = context.resources.getString(R.string.bulk_tag_fix_error),
+                color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(horizontal = 4.dp)
             )
 

@@ -981,6 +981,11 @@ class PlayerViewModel(
                             )
                         }
 
+                        val maxAttempts = 3
+                        val retryDelayMillis = 2000L
+                        val maxConsecutiveFailures = 3
+                        var consecutiveFailures = 0
+
                         try {
                             _bulkTagFixState.value.suggestions.forEachIndexed { index, suggestion ->
                                 ensureActive()
@@ -999,43 +1004,79 @@ class PlayerViewModel(
                                 val updatedSuggestion = if (query == null) {
                                     suggestion.copy(status = BulkTagFixStatus.Skipped)
                                 } else {
-                                    when (val result = metadataProvider.searchMetadata(
-                                        query = query,
-                                        trackDuration = suggestion.track.duration.toLong()
-                                    )) {
-                                        is Result.Success -> {
-                                            val match = result.data.firstOrNull {
-                                                it.album.isNotBlank()
-                                            }
+                                    var attempt = 0
+                                    var failedTransiently = false
+                                    var outcome: BulkTagFixSuggestion? = null
 
-                                            if (match == null) {
-                                                suggestion.copy(status = BulkTagFixStatus.NotFound)
-                                            } else {
-                                                suggestion.copy(
-                                                    status = BulkTagFixStatus.Found,
-                                                    searchResult = match
-                                                )
-                                            }
-                                        }
+                                    while (outcome == null && attempt < maxAttempts) {
+                                        when (val result = metadataProvider.searchMetadata(
+                                            query = query,
+                                            trackDuration = suggestion.track.duration.toLong()
+                                        )) {
+                                            is Result.Success -> {
+                                                val match = result.data.firstOrNull {
+                                                    it.album.isNotBlank()
+                                                }
 
-                                        is Result.Error -> {
-                                            if (result.error == DataError.Network.NoInternet ||
-                                                result.error == DataError.Network.ServiceUnavailable
-                                            ) {
-                                                SnackbarController.sendEvent(
-                                                    SnackbarEvent(
-                                                        message = R.string.no_internet
+                                                outcome = if (match == null) {
+                                                    suggestion.copy(status = BulkTagFixStatus.NotFound)
+                                                } else {
+                                                    suggestion.copy(
+                                                        status = BulkTagFixStatus.Found,
+                                                        searchResult = match
                                                     )
-                                                )
-                                                return@launch
+                                                }
                                             }
 
-                                            suggestion.copy(status = BulkTagFixStatus.NotFound)
+                                            is Result.Error -> {
+                                                // Client errors won't fix themselves, so don't retry them.
+                                                val isTransient = when (result.error) {
+                                                    DataError.Network.BadRequest,
+                                                    DataError.Network.Unauthorized,
+                                                    DataError.Network.Forbidden,
+                                                    DataError.Network.NotFound -> false
+
+                                                    else -> true
+                                                }
+                                                val isLastAttempt = attempt == maxAttempts - 1
+
+                                                if (isTransient) failedTransiently = true
+
+                                                if (isLastAttempt && result.error == DataError.Network.NoInternet) {
+                                                    SnackbarController.sendEvent(
+                                                        SnackbarEvent(
+                                                            message = R.string.no_internet
+                                                        )
+                                                    )
+                                                    return@launch
+                                                }
+
+                                                if (isTransient && !isLastAttempt) {
+                                                    delay(retryDelayMillis * (attempt + 1))
+                                                } else {
+                                                    outcome = suggestion.copy(
+                                                        status = BulkTagFixStatus.Error
+                                                    )
+                                                }
+                                            }
                                         }
+
+                                        ensureActive()
+                                        attempt++
                                     }
+
+                                    outcome ?: suggestion.copy(status = BulkTagFixStatus.Error)
                                 }
 
                                 ensureActive()
+
+                                if (failedTransiently &&
+                                    updatedSuggestion.status == BulkTagFixStatus.Error
+                                ) {
+                                    consecutiveFailures++
+                                } else {
+                                    consecutiveFailures = 0
+                                }
 
                                 _bulkTagFixState.update { state ->
                                     state.copy(
@@ -1044,6 +1085,15 @@ class PlayerViewModel(
                                             if (i == index) updatedSuggestion else item
                                         }
                                     )
+                                }
+
+                                if (consecutiveFailures >= maxConsecutiveFailures) {
+                                    SnackbarController.sendEvent(
+                                        SnackbarEvent(
+                                            message = R.string.musicbrainz_is_unavailable
+                                        )
+                                    )
+                                    return@launch
                                 }
                             }
                         } finally {

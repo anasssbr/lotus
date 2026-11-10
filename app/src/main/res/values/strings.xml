@@ -162,6 +162,7 @@
     <string name="bulk_tag_fix_searching">Looking up...</string>
     <string name="bulk_tag_fix_not_found">No match found</string>
     <string name="bulk_tag_fix_skipped">Missing title or artist - skipped</string>
+    <string name="bulk_tag_fix_error">Lookup failed - try again later</string>
 
     <!-- Changes errors -->
     <string name="failed_to_load_cover_art_album_id_corrupted">Failed to load cover art. Looks like album id for this recording is corrupted.</string>

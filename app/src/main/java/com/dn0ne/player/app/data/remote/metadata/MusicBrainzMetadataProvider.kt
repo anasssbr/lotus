@@ -18,6 +18,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.appendPathSegments
 import io.ktor.http.headers
 import io.ktor.serialization.JsonConvertException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -57,13 +58,27 @@ class MusicBrainzMetadataProvider(
                     append(HttpHeaders.UserAgent, userAgent)
                 }
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: UnresolvedAddressException) {
-            Log.i(logTag, e.message.toString())
+            Log.i(logTag, "Search failed: ${e.message}")
             return Result.Error(DataError.Network.NoInternet)
-        } catch (_: HttpRequestTimeoutException) {
+        } catch (e: HttpRequestTimeoutException) {
+            Log.w(logTag, "Search request timed out for query: $query")
             return Result.Error(DataError.Network.RequestTimeout)
-        } catch (_: SocketException) {
+        } catch (e: SocketException) {
+            Log.w(logTag, "Search failed: ${e.message}")
             return Result.Error(DataError.Network.Unknown)
+        } catch (e: Exception) {
+            Log.w(logTag, "Search failed for query: $query", e)
+            return Result.Error(DataError.Network.Unknown)
+        }
+
+        if (response.status != HttpStatusCode.OK) {
+            Log.w(
+                logTag,
+                "Search failed with HTTP ${response.status.value} for query: $query"
+            )
         }
 
         when (response.status) {
@@ -103,7 +118,10 @@ class MusicBrainzMetadataProvider(
                 return Result.Error(DataError.Network.InternalServerError)
             }
 
-            HttpStatusCode.ServiceUnavailable -> {
+            HttpStatusCode.BadGateway,
+            HttpStatusCode.ServiceUnavailable,
+            HttpStatusCode.GatewayTimeout,
+            HttpStatusCode.TooManyRequests -> {
                 return Result.Error(DataError.Network.ServiceUnavailable)
             }
 
