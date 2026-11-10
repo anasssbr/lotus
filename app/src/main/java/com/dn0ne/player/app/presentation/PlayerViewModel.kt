@@ -1001,11 +1001,11 @@ class PlayerViewModel(
                                 }
 
                                 val query = buildMetadataQuery(suggestion.track)
+                                var failedTransiently = false
                                 val updatedSuggestion = if (query == null) {
                                     suggestion.copy(status = BulkTagFixStatus.Skipped)
                                 } else {
                                     var attempt = 0
-                                    var failedTransiently = false
                                     var outcome: BulkTagFixSuggestion? = null
 
                                     while (outcome == null && attempt < maxAttempts) {
