@@ -46,6 +46,7 @@ fun TrackSortButton(
     order: SortOrder,
     onSortChange: (TrackSort) -> Unit,
     onSortOrderChange: (SortOrder) -> Unit,
+    showLabel: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Box {
@@ -54,16 +55,26 @@ fun TrackSortButton(
         }
 
         val context = LocalContext.current
-        IconButton(
-            onClick = {
-                isMenuExpanded = true
-            },
-            modifier = modifier
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.Sort,
-                contentDescription = context.resources.getString(R.string.sort_order)
+        if (showLabel) {
+            SortLabelButton(
+                label = context.resources.getString(sort.labelRes()),
+                onClick = {
+                    isMenuExpanded = true
+                },
+                modifier = modifier
             )
+        } else {
+            IconButton(
+                onClick = {
+                    isMenuExpanded = true
+                },
+                modifier = modifier
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.Sort,
+                    contentDescription = context.resources.getString(R.string.sort_order)
+                )
+            }
         }
 
         DropdownMenu(
@@ -145,6 +156,7 @@ fun PlaylistSortButton(
     order: SortOrder,
     onSortChange: (PlaylistSort) -> Unit,
     onSortOrderChange: (SortOrder) -> Unit,
+    showLabel: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Box {
@@ -153,16 +165,26 @@ fun PlaylistSortButton(
         }
 
         val context = LocalContext.current
-        IconButton(
-            onClick = {
-                isMenuExpanded = true
-            },
-            modifier = modifier
-        ) {
-            Icon(
-                imageVector = Icons.AutoMirrored.Rounded.Sort,
-                contentDescription = context.resources.getString(R.string.sort_order)
+        if (showLabel) {
+            SortLabelButton(
+                label = context.resources.getString(sort.labelRes()),
+                onClick = {
+                    isMenuExpanded = true
+                },
+                modifier = modifier
             )
+        } else {
+            IconButton(
+                onClick = {
+                    isMenuExpanded = true
+                },
+                modifier = modifier
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Rounded.Sort,
+                    contentDescription = context.resources.getString(R.string.sort_order)
+                )
+            }
         }
 
         DropdownMenu(
@@ -224,6 +246,55 @@ fun SortButton(
             text = text,
             fontWeight = FontWeight.SemiBold
         )
+    }
+}
+
+@Composable
+private fun SortLabelButton(
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier
+            .clip(CircleShape)
+            .clickable { onClick() }
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+
+        Spacer(modifier = Modifier.width(6.dp))
+
+        Icon(
+            imageVector = Icons.AutoMirrored.Rounded.Sort,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(16.dp)
+        )
+    }
+}
+
+private fun TrackSort.labelRes(): Int {
+    return when (this) {
+        TrackSort.Title -> R.string.title
+        TrackSort.Album -> R.string.album
+        TrackSort.Artist -> R.string.artist
+        TrackSort.Genre -> R.string.genre
+        TrackSort.Year -> R.string.year
+        TrackSort.TrackNumber -> R.string.track_number
+        TrackSort.DateModified -> R.string.date_modified
+    }
+}
+
+private fun PlaylistSort.labelRes(): Int {
+    return when (this) {
+        PlaylistSort.Title -> R.string.title
+        PlaylistSort.TrackCount -> R.string.track_count
     }
 }
 

@@ -22,11 +22,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -36,10 +40,12 @@ import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.AddToQueue
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.MyLocation
+import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.Settings
@@ -72,14 +78,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
 import androidx.compose.ui.util.fastFirstOrNull
+import androidx.navigation.NavDestination.Companion.hasRoute
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.dn0ne.player.R
 import com.dn0ne.player.app.domain.sort.PlaylistSort
@@ -91,7 +101,11 @@ import com.dn0ne.player.app.domain.track.filterPlaylists
 import com.dn0ne.player.app.domain.track.filterTracks
 import com.dn0ne.player.app.presentation.components.PlaylistSortButton
 import com.dn0ne.player.app.presentation.components.TrackSortButton
+import com.dn0ne.player.app.presentation.components.LotusBottomBar
+import com.dn0ne.player.app.presentation.components.TopLevelTab
+import com.dn0ne.player.app.presentation.components.download.DownloadScreen
 import com.dn0ne.player.app.presentation.components.playback.PlayerSheet
+import com.dn0ne.player.app.presentation.components.playlist.AddNewPlaylistRow
 import com.dn0ne.player.app.presentation.components.playlist.AddToOrCreatePlaylistBottomSheet
 import com.dn0ne.player.app.presentation.components.playlist.DeletePlaylistDialog
 import com.dn0ne.player.app.presentation.components.playlist.MutablePlaylist
@@ -104,6 +118,11 @@ import com.dn0ne.player.app.presentation.components.selection.selectionList
 import com.dn0ne.player.app.presentation.components.selection.selectionRows
 import com.dn0ne.player.app.presentation.components.settings.SettingsSheet
 import com.dn0ne.player.app.presentation.components.settings.Theme
+import com.dn0ne.player.ui.theme.LotusNearBlack
+import com.dn0ne.player.ui.theme.LotusNeutralVariant
+import com.dn0ne.player.ui.theme.LotusShapes
+import com.dn0ne.player.ui.theme.LotusTeal
+import com.dn0ne.player.ui.theme.Typography
 import com.dn0ne.player.app.presentation.components.topbar.LazyGridWithCollapsibleTabsTopBar
 import com.dn0ne.player.app.presentation.components.topbar.Tab
 import com.dn0ne.player.app.presentation.components.topbar.TopBarContent
@@ -111,6 +130,8 @@ import com.dn0ne.player.app.presentation.components.trackList
 import com.dn0ne.player.app.presentation.components.trackinfo.BulkTagFixScreen
 import com.dn0ne.player.app.presentation.components.trackinfo.SearchField
 import com.dn0ne.player.app.presentation.components.trackinfo.TrackInfoSheet
+import com.dn0ne.player.app.presentation.home.HomeScreen
+import com.dn0ne.player.app.presentation.home.HomeViewModel
 import com.kmpalette.color
 import com.kmpalette.rememberDominantColorState
 import com.materialkolor.DynamicMaterialTheme
@@ -141,6 +162,7 @@ private val GridStatesSaver = listSaver<Map<Tab, LazyGridState>, String>(
 @Composable
 fun PlayerScreen(
     viewModel: PlayerViewModel,
+    homeViewModel: HomeViewModel,
     onCoverArtPick: () -> Unit,
     onFolderPick: (scan: Boolean) -> Unit,
     onLyricsPick: () -> Unit,
@@ -186,8 +208,12 @@ fun PlayerScreen(
     val amoledDarkTheme by viewModel.settings.amoledDarkTheme.collectAsState()
     val paletteStyle by viewModel.settings.paletteStyle.collectAsState()
     DynamicMaterialTheme(
-        seedColor = colorToApply,
-        primary = colorToApply.takeIf { it.toHct().chroma <= 20 },
+        seedColor = if (useAlbumArtColor && coverArtBitmap != null) colorToApply else LotusTeal,
+        primary = if (useAlbumArtColor && coverArtBitmap != null) {
+            colorToApply.takeIf { it.toHct().chroma <= 20 }
+        } else LotusTeal,
+        neutral = LotusNearBlack,
+        neutralVariant = LotusNeutralVariant,
         useDarkTheme = when (appearance) {
             Theme.Appearance.System -> isSystemInDarkTheme()
             Theme.Appearance.Light -> false
@@ -206,8 +232,20 @@ fun PlayerScreen(
             Theme.PaletteStyle.Content -> PaletteStyle.Content
         },
         animationSpec = tween(300, 200),
+        typography = Typography,
+        shapes = LotusShapes,
         animate = true
     ) {
+        MaterialTheme(
+            colorScheme = MaterialTheme.colorScheme.copy(
+                primary = LotusTeal,
+                onPrimary = Color(0xFF00201C),
+                primaryContainer = Color(0xFF0E4A44),
+                onPrimaryContainer = Color(0xFFB8F5EC)
+            ),
+            typography = Typography,
+            shapes = LotusShapes
+        ) {
         val rippleColor = MaterialTheme.colorScheme.primaryContainer
         val ripple = remember(rippleColor) {
             ripple(color = rippleColor)
@@ -260,6 +298,16 @@ fun PlayerScreen(
 
                 val navController = rememberNavController()
 
+                var openSearchOnLibrary by rememberSaveable {
+                    mutableStateOf(false)
+                }
+
+                val currentBackStackEntry by navController.currentBackStackEntryAsState()
+                val currentDestination = currentBackStackEntry?.destination
+                val isHomeDestination = currentDestination?.hasRoute<PlayerRoutes.Home>() == true
+                val isLibraryDestination = currentDestination?.hasRoute<PlayerRoutes.Main>() == true
+                val showBottomBar = isHomeDestination || isLibraryDestination
+
                 var showScrollToTopButton by remember {
                     mutableStateOf(false)
                 }
@@ -291,8 +339,48 @@ fun PlayerScreen(
                         fadeOut(animationSpec = spring(stiffness = Spring.StiffnessMedium)) +
                                 slideOutVertically(targetOffsetY = { it / 10 })
                     },
-                    startDestination = PlayerRoutes.Main
+                    startDestination = PlayerRoutes.Home
                 ) {
+                    composable<PlayerRoutes.Home> {
+                        val homeState by homeViewModel.state.collectAsState()
+                        val homeTrackList by viewModel.trackList.collectAsState()
+
+                        LaunchedEffect(homeTrackList) {
+                            homeViewModel.refresh(homeTrackList)
+                        }
+
+                        HomeScreen(
+                            state = homeState,
+                            onSearchClick = {
+                                openSearchOnLibrary = true
+                                navController.navigate(PlayerRoutes.Main) {
+                                    popUpTo(PlayerRoutes.Home) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                            onTrackClick = { queue, track ->
+                                viewModel.onEvent(
+                                    PlayerScreenEvent.OnTrackClick(
+                                        track = track,
+                                        playlist = Playlist(name = null, trackList = queue)
+                                    )
+                                )
+                            },
+                            onPlayMixClick = {
+                                val mix = homeState.mix
+                                if (mix.isNotEmpty()) {
+                                    viewModel.onEvent(
+                                        PlayerScreenEvent.OnTrackClick(
+                                            track = mix.first(),
+                                            playlist = Playlist(name = null, trackList = mix)
+                                        )
+                                    )
+                                }
+                            }
+                        )
+                    }
+
                     composable<PlayerRoutes.Main> {
                         val trackList by viewModel.trackList.collectAsState()
                         val playlists by viewModel.playlists.collectAsState()
@@ -360,6 +448,8 @@ fun PlayerScreen(
                             onTabChange = {
                                 selectedTab = it
                             },
+                            openSearchOnLibrary = openSearchOnLibrary,
+                            onSearchOpened = { openSearchOnLibrary = false },
                             trackList = trackList,
                             currentTrack = currentTrack,
                             onTrackClick = { track, playlist ->
@@ -478,6 +568,9 @@ fun PlayerScreen(
                                 viewModel.onEvent(PlayerScreenEvent.OnOpenBulkTagFixClick)
                                 navController.navigate(PlayerRoutes.BulkTagFix)
                             },
+                            onDownloadClick = {
+                                navController.navigate(PlayerRoutes.Download)
+                            },
                             replaceSearchWithFilter = replaceSearchWithFilter,
                             gridPlaylists = gridPlaylists,
                             onGridPlaylistsClick = {
@@ -502,6 +595,18 @@ fun PlayerScreen(
                             },
                             onCancelScanClick = {
                                 viewModel.onEvent(PlayerScreenEvent.OnBulkTagFixCancelClick)
+                            },
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
+
+                    composable<PlayerRoutes.Download> {
+                        DownloadScreen(
+                            onBackClick = {
+                                navController.popBackStack()
+                            },
+                            onPreviewStarted = {
+                                viewModel.player?.pause()
                             },
                             modifier = Modifier.fillMaxSize()
                         )
@@ -771,7 +876,7 @@ fun PlayerScreen(
                     val isPlayerExpanded by remember {
                         derivedStateOf { playbackState.isPlayerExpanded }
                     }
-                    if (!isPlayerExpanded) {
+                    if (!isPlayerExpanded && isLibraryDestination) {
                         ScrollToTopAndLocateButtons(
                             showScrollToTopButton = showScrollToTopButton,
                             onScrollToTopClick = onScrollToTopClick,
@@ -868,6 +973,7 @@ fun PlayerScreen(
                                     viewModel.onEvent(PlayerScreenEvent.OnLyricsClick)
                                 },
                                 settings = viewModel.settings,
+                                showBottomBar = showBottomBar,
                                 onRemoveFromQueueClick = {
                                     viewModel.onEvent(PlayerScreenEvent.OnRemoveFromQueueClick(it))
                                 },
@@ -887,6 +993,27 @@ fun PlayerScreen(
                                     .fillMaxWidth()
                             )
                         }
+                    }
+
+                    if (showBottomBar) {
+                        LotusBottomBar(
+                            selectedTab = if (isHomeDestination) TopLevelTab.Home
+                            else TopLevelTab.Library,
+                            onHomeClick = {
+                                navController.navigate(PlayerRoutes.Home) {
+                                    popUpTo(PlayerRoutes.Home) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            },
+                            onLibraryClick = {
+                                navController.navigate(PlayerRoutes.Main) {
+                                    popUpTo(PlayerRoutes.Home) { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        )
                     }
                 }
 
@@ -979,6 +1106,7 @@ fun PlayerScreen(
                 )
             }
         }
+        }
     }
 }
 
@@ -987,6 +1115,8 @@ fun MainPlayerScreen(
     gridStates: Map<Tab, LazyGridState>,
     topBarTabs: List<Tab>,
     defaultTab: Tab,
+    openSearchOnLibrary: Boolean = false,
+    onSearchOpened: () -> Unit = {},
     onTabChange: (Tab) -> Unit = {},
     trackList: List<Track>,
     currentTrack: Track?,
@@ -1018,6 +1148,7 @@ fun MainPlayerScreen(
     onGridPlaylistsClick: () -> Unit,
     onCreatePlaylistClick: () -> Unit,
     onBulkTagFixClick: () -> Unit,
+    onDownloadClick: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1031,6 +1162,13 @@ fun MainPlayerScreen(
     }
     var showSearchField by rememberSaveable {
         mutableStateOf(false)
+    }
+
+    LaunchedEffect(openSearchOnLibrary) {
+        if (openSearchOnLibrary) {
+            showSearchField = true
+            onSearchOpened()
+        }
     }
 
     var isInSelectionMode: Boolean by remember {
@@ -1068,6 +1206,7 @@ fun MainPlayerScreen(
 
             onTabChange(it)
         },
+        showTabsRow = topBarContent == TopBarContent.Default,
         tabTitleTextStyle = MaterialTheme.typography.titleLarge.copy(
             fontSize = lerp(
                 MaterialTheme.typography.titleLarge.fontSize,
@@ -1087,21 +1226,52 @@ fun MainPlayerScreen(
             ) { state ->
                 when (state) {
                     TopBarContent.Default -> {
-                        Row(
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 20.dp, end = 6.dp, top = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.MusicNote,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(22.dp)
+                                )
+
+                                Spacer(modifier = Modifier.width(10.dp))
+
+                                Text(
+                                    text = stringResource(R.string.your_library),
+                                    style = MaterialTheme.typography.titleLarge,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+
+                                Spacer(modifier = Modifier.weight(1f))
+
                                 IconButton(
-                                    onClick = onSettingsClick
+                                    onClick = {
+                                        showSearchField = true
+                                    }
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.Settings,
+                                        imageVector = if (replaceSearchWithFilter && tab == Tab.Tracks) {
+                                            Icons.Rounded.FilterList
+                                        } else Icons.Rounded.Search,
                                         contentDescription = context.resources.getString(
-                                            R.string.settings
+                                            R.string.track_search
                                         )
                                     )
                                 }
+                            }
 
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 if (tab == Tab.Tracks) {
                                     TrackSortButton(
                                         sort = trackSort,
@@ -1111,7 +1281,8 @@ fun MainPlayerScreen(
                                         },
                                         onSortOrderChange = {
                                             onTrackSortChange(null, it)
-                                        }
+                                        },
+                                        showLabel = true
                                     )
                                 } else {
                                     PlaylistSortButton(
@@ -1122,23 +1293,22 @@ fun MainPlayerScreen(
                                         },
                                         onSortOrderChange = {
                                             onPlaylistSortChange(null, it)
-                                        }
+                                        },
+                                        showLabel = true
                                     )
                                 }
-                            }
 
-                            Row {
-                                if (tab == Tab.Playlists) {
-                                    IconButton(
-                                        onClick = onCreatePlaylistClick
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.AutoMirrored.Rounded.PlaylistAdd,
-                                            contentDescription = context.resources.getString(
-                                                R.string.create_playlist
-                                            )
+                                Spacer(modifier = Modifier.weight(1f))
+
+                                IconButton(
+                                    onClick = onSettingsClick
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Settings,
+                                        contentDescription = context.resources.getString(
+                                            R.string.settings
                                         )
-                                    }
+                                    )
                                 }
 
                                 if (tab != Tab.Tracks) {
@@ -1172,16 +1342,12 @@ fun MainPlayerScreen(
                                 }
 
                                 IconButton(
-                                    onClick = {
-                                        showSearchField = true
-                                    }
+                                    onClick = onDownloadClick
                                 ) {
                                     Icon(
-                                        imageVector = if (replaceSearchWithFilter && tab == Tab.Tracks) {
-                                            Icons.Rounded.FilterList
-                                        } else Icons.Rounded.Search,
+                                        imageVector = Icons.Rounded.Download,
                                         contentDescription = context.resources.getString(
-                                            R.string.track_search
+                                            R.string.download_title
                                         )
                                     )
                                 }
@@ -1349,7 +1515,7 @@ fun MainPlayerScreen(
             16.dp,
             alignment = Alignment.CenterHorizontally
         ),
-        contentVerticalArrangement = Arrangement.spacedBy(8.dp),
+        contentVerticalArrangement = Arrangement.spacedBy(4.dp),
         contentPadding = PaddingValues(horizontal = 16.dp),
         gridCells = {
             if (it == Tab.Tracks || !gridPlaylists) GridCells.Fixed(1) else {
@@ -1410,6 +1576,16 @@ fun MainPlayerScreen(
             }
 
             Tab.Playlists -> {
+                if (!isInSelectionMode) {
+                    item(
+                        span = { GridItemSpan(this.maxLineSpan) }
+                    ) {
+                        AddNewPlaylistRow(
+                            onClick = onCreatePlaylistClick
+                        )
+                    }
+                }
+
                 if (gridPlaylists) {
                     if (!isInSelectionMode) {
                         playlistCards(
@@ -1819,6 +1995,9 @@ fun ScrollToTopAndLocateButtons(
 @Serializable
 private sealed interface PlayerRoutes {
     @Serializable
+    data object Home : PlayerRoutes
+
+    @Serializable
     data object Main : PlayerRoutes
 
     @Serializable
@@ -1829,4 +2008,7 @@ private sealed interface PlayerRoutes {
 
     @Serializable
     data object BulkTagFix : PlayerRoutes
+
+    @Serializable
+    data object Download : PlayerRoutes
 }

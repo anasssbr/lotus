@@ -50,8 +50,6 @@ fun LazyListScope.trackList(
                 .padding(horizontal = 16.dp)
                 .animateItem(fadeInSpec = null, fadeOutSpec = null)
         )
-
-        Spacer(modifier = Modifier.height(8.dp))
     }
 }
 

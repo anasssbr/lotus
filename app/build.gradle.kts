@@ -93,6 +93,7 @@ android {
     }
 
     compileOptions {
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -101,6 +102,14 @@ android {
     }
     buildFeatures {
         compose = true
+    }
+
+    packaging {
+        jniLibs {
+            // youtubedl-android reads libpython.zip.so from the native lib directory,
+            // so the libraries have to be extracted instead of loaded from the APK.
+            useLegacyPackaging = true
+        }
     }
 
     dependenciesInfo {
@@ -114,6 +123,8 @@ tasks.withType<com.android.build.gradle.internal.tasks.CompileArtProfileTask> {
 }
 
 dependencies {
+
+    coreLibraryDesugaring(libs.desugar.jdk.libs.nio)
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -140,6 +151,7 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.coil)
+    implementation(libs.coil.network.okhttp)
     implementation(libs.kmpalette.core)
     implementation(libs.materialkolor)
     implementation(libs.jaudiotagger)
@@ -150,4 +162,7 @@ dependencies {
     implementation(libs.realm.library.base)
     implementation(libs.reorderable)
     implementation(libs.scrollbars)
+    implementation(libs.youtubedl.android.library)
+    implementation(libs.newpipe.extractor)
+    implementation(libs.okhttp)
 }

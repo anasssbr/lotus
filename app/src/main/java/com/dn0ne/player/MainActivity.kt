@@ -42,6 +42,7 @@ import com.dn0ne.player.app.domain.result.Result
 import com.dn0ne.player.app.domain.track.Track
 import com.dn0ne.player.app.presentation.PlayerScreen
 import com.dn0ne.player.app.presentation.PlayerViewModel
+import com.dn0ne.player.app.presentation.home.HomeViewModel
 import com.dn0ne.player.app.presentation.components.settings.Theme
 import com.dn0ne.player.app.presentation.components.snackbar.ObserveAsEvents
 import com.dn0ne.player.app.presentation.components.snackbar.ScaffoldWithSnackbarEvents
@@ -242,6 +243,7 @@ class MainActivity : ComponentActivity() {
 
                         composable<Routes.Player> {
                             val viewModel = getViewModel<PlayerViewModel>()
+                            val homeViewModel = getViewModel<HomeViewModel>()
                             val mediaSessionToken =
                                 SessionToken(
                                     application,
@@ -278,6 +280,7 @@ class MainActivity : ComponentActivity() {
                             ) {
                                 PlayerScreen(
                                     viewModel = viewModel,
+                                    homeViewModel = homeViewModel,
                                     onCoverArtPick = {
                                         pickCoverArt.launch(
                                             PickVisualMediaRequest(

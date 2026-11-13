@@ -17,6 +17,8 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import com.dn0ne.player.app.data.playback.ListeningRecorder
+import com.dn0ne.player.app.data.repository.ListeningHistoryRepository
 import com.dn0ne.player.core.data.Settings
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -210,6 +212,7 @@ class EqualizerController(context: Context) {
 class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private val equalizerController = get<EqualizerController>()
+    private var listeningRecorder: ListeningRecorder? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -236,6 +239,11 @@ class PlaybackService : MediaSessionService() {
                 }
             }
         })
+
+        listeningRecorder = ListeningRecorder(
+            player = player,
+            repository = get<ListeningHistoryRepository>()
+        ).also { it.start() }
 
         SleepTimer.addOnFinishCallback {
             player.stop()
@@ -269,6 +277,8 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        listeningRecorder?.release()
+        listeningRecorder = null
         equalizerController.releaseEqualizer()
         SleepTimer.stop()
         mediaSession?.run {

@@ -24,6 +24,33 @@
 
 -keep class org.jaudiotagger.** { *; }
 
+# yt-dlp wrapper: it is loaded reflectively from Python and uses Jackson internally.
+-keep class com.yausername.** { *; }
+-dontwarn com.yausername.**
+-keep class com.fasterxml.jackson.** { *; }
+-dontwarn com.fasterxml.jackson.**
+-keepclassmembers class * {
+    @com.fasterxml.jackson.annotation.* <fields>;
+}
+-keepattributes *Annotation*, Signature, InnerClasses, EnclosingMethod
+
+# Commons Compress (used by youtubedl-android to unzip Python) registers its
+# ExtraField implementations reflectively; R8 merging them breaks the static
+# initializer with "AsiExtraField is not a concrete class".
+-keep class org.apache.commons.compress.** { *; }
+-dontwarn org.apache.commons.compress.**
+-dontwarn org.tukaani.xz.**
+
+# NewPipeExtractor parses YouTube pages with jsoup and evaluates player JS with Rhino.
+-keep class org.schabi.newpipe.** { *; }
+-dontwarn org.schabi.newpipe.**
+-keep class org.mozilla.javascript.** { *; }
+-dontwarn org.mozilla.javascript.**
+-dontwarn org.jsoup.**
+-dontwarn javax.annotation.**
+-dontwarn com.grack.nanojson.**
+-dontwarn org.intellij.lang.annotations.**
+
 -dontwarn java.awt.Graphics2D
 -dontwarn java.awt.Image
 -dontwarn java.awt.geom.AffineTransform

@@ -1,6 +1,7 @@
 package com.dn0ne.player.app.data
 
 import android.content.Context
+import android.util.Log
 import com.dn0ne.player.app.domain.lyrics.Lyrics
 import com.dn0ne.player.app.domain.result.DataError
 import com.dn0ne.player.app.domain.result.Result
@@ -12,37 +13,47 @@ import java.io.File
 import java.io.FileOutputStream
 
 class LyricsReaderImpl(private val context: Context) : LyricsReader {
+    private val logTag = "LyricsReader"
+
     override fun readFromTag(track: Track): Result<Lyrics?, DataError.Local> {
         var lyrics: Lyrics? = null
 
         var file: File? = null
-        context.contentResolver.openInputStream(track.uri)?.use { input ->
-            val temp = File.createTempFile("temp_audio", ".${track.format}", context.cacheDir)
-            FileOutputStream(temp).use { output ->
-                input.copyTo(output)
+        try {
+            context.contentResolver.openInputStream(track.uri)?.use { input ->
+                val temp = File.createTempFile("temp_audio", ".${track.format}", context.cacheDir)
+                FileOutputStream(temp).use { output ->
+                    input.copyTo(output)
+                }
+                file = temp
             }
-            file = temp
+
+            if (file == null) return Result.Error(DataError.Local.NoReadPermission)
+
+            val audioFile =
+                AudioFileIO.read(file) ?: return Result.Error(DataError.Local.FailedToRead)
+            val tag = audioFile.tagAndConvertOrCreateAndSetDefault
+                ?: return Result.Error(DataError.Local.FailedToRead)
+
+            var lyricsText = tag.getFirst(FieldKey.LYRICS)
+
+            if (lyricsText?.isNotBlank() == true) {
+                lyrics = Lyrics(
+                    uri = track.uri.toString(),
+                    plain = lyricsText.split('\n'),
+                    synced = null,
+                    areFromRemote = false
+                )
+            }
+        } catch (e: Exception) {
+            // Jaudiotagger has no reader for some formats (e.g. .opus), so treat the
+            // failure as "this track simply has no embedded lyrics".
+            Log.i(logTag, "Could not read lyrics from tags: ${e.message}")
+            return Result.Success(null)
+        } finally {
+            file?.delete()
         }
 
-        if (file == null) return Result.Error(DataError.Local.NoReadPermission)
-
-        val audioFile =
-            AudioFileIO.read(file) ?: return Result.Error(DataError.Local.FailedToRead)
-        val tag = audioFile.tagAndConvertOrCreateAndSetDefault
-            ?: return Result.Error(DataError.Local.FailedToRead)
-
-        var lyricsText = tag.getFirst(FieldKey.LYRICS)
-
-        if (lyricsText?.isNotBlank() == true) {
-            lyrics = Lyrics(
-                uri = track.uri.toString(),
-                plain = lyricsText.split('\n'),
-                synced = null,
-                areFromRemote = false
-            )
-        }
-
-        context.cacheDir?.deleteRecursively()
         return Result.Success(lyrics)
     }
 }

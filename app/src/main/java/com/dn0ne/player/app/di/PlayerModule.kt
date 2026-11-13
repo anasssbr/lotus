@@ -1,24 +1,35 @@
 package com.dn0ne.player.app.di
 
 import com.dn0ne.player.EqualizerController
+import com.dn0ne.player.app.data.DownloadedMusicStore
 import com.dn0ne.player.app.data.LyricsReader
 import com.dn0ne.player.app.data.LyricsReaderImpl
 import com.dn0ne.player.app.data.MetadataWriter
 import com.dn0ne.player.app.data.MetadataWriterImpl
 import com.dn0ne.player.app.data.SavedPlayerState
+import com.dn0ne.player.app.data.notification.DownloadNotifications
+import com.dn0ne.player.app.data.remote.download.OnlineMusicProvider
+import com.dn0ne.player.app.data.remote.download.YtDlpMusicProvider
 import com.dn0ne.player.app.data.remote.lyrics.LrclibLyricsProvider
 import com.dn0ne.player.app.data.remote.lyrics.LyricsProvider
 import com.dn0ne.player.app.data.remote.metadata.MetadataProvider
 import com.dn0ne.player.app.data.remote.metadata.MusicBrainzMetadataProvider
 import com.dn0ne.player.app.data.repository.LyricsJson
 import com.dn0ne.player.app.data.repository.LyricsRepository
+import com.dn0ne.player.app.data.repository.DailyListeningJson
+import com.dn0ne.player.app.data.repository.ListeningEventJson
+import com.dn0ne.player.app.data.repository.ListeningHistoryRepository
 import com.dn0ne.player.app.data.repository.PlaylistJson
 import com.dn0ne.player.app.data.repository.PlaylistRepository
+import com.dn0ne.player.app.data.repository.RealmListeningHistoryRepository
 import com.dn0ne.player.app.data.repository.RealmLyricsRepository
 import com.dn0ne.player.app.data.repository.RealmPlaylistRepository
 import com.dn0ne.player.app.data.repository.TrackRepository
 import com.dn0ne.player.app.data.repository.TrackRepositoryImpl
+import com.dn0ne.player.app.presentation.DownloadViewModel
 import com.dn0ne.player.app.presentation.PlayerViewModel
+import com.dn0ne.player.app.presentation.home.DailyMixStore
+import com.dn0ne.player.app.presentation.home.HomeViewModel
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
@@ -81,7 +92,12 @@ val playerModule = module {
 
     single<Realm> {
         val configuration = RealmConfiguration.create(
-            schema = setOf(LyricsJson::class, PlaylistJson::class)
+            schema = setOf(
+                LyricsJson::class,
+                PlaylistJson::class,
+                ListeningEventJson::class,
+                DailyListeningJson::class
+            )
         )
 
         Realm.open(configuration)
@@ -99,6 +115,12 @@ val playerModule = module {
         )
     }
 
+    single<ListeningHistoryRepository> {
+        RealmListeningHistoryRepository(
+            realm = get()
+        )
+    }
+
     single<EqualizerController> {
         EqualizerController(
             context = androidContext()
@@ -108,6 +130,47 @@ val playerModule = module {
     single<LyricsReader> {
         LyricsReaderImpl(
             context = androidContext()
+        )
+    }
+
+    single<OnlineMusicProvider> {
+        YtDlpMusicProvider(
+            context = androidContext(),
+            httpClient = get()
+        )
+    }
+
+    single<DownloadedMusicStore> {
+        DownloadedMusicStore(
+            context = androidContext()
+        )
+    }
+
+    single {
+        DownloadNotifications(
+            context = androidContext()
+        )
+    }
+
+    viewModel<DownloadViewModel> {
+        DownloadViewModel(
+            context = androidContext(),
+            provider = get(),
+            store = get(),
+            notifications = get()
+        )
+    }
+
+    single {
+        DailyMixStore(
+            context = androidContext()
+        )
+    }
+
+    viewModel<HomeViewModel> {
+        HomeViewModel(
+            listeningHistoryRepository = get(),
+            dailyMixStore = get()
         )
     }
 

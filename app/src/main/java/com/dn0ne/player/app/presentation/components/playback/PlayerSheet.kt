@@ -60,6 +60,8 @@ import androidx.compose.material.icons.rounded.SkipPrevious
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ShapeDefaults
 import androidx.compose.material3.Text
@@ -82,6 +84,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
@@ -123,6 +126,7 @@ fun PlayerSheet(
     onReorderingQueue: (Int, Int) -> Unit,
     onTrackClick: (Track, Playlist) -> Unit,
     settings: Settings,
+    showBottomBar: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val playbackState by playbackStateFlow.collectAsState()
@@ -238,7 +242,8 @@ fun PlayerSheet(
                     onPlayClick = onPlayClick,
                     onPauseClick = onPauseClick,
                     onSeekToNextClick = onSeekToNextClick,
-                    onCoverArtLoaded = onCoverArtLoaded
+                    onCoverArtLoaded = onCoverArtLoaded,
+                    applyNavigationBarsPadding = !showBottomBar
                 )
             }
 
@@ -324,56 +329,66 @@ fun BottomPlayer(
     onPauseClick: () -> Unit,
     onSeekToNextClick: () -> Unit,
     onCoverArtLoaded: (ImageBitmap?) -> Unit,
+    applyNavigationBarsPadding: Boolean = true,
     modifier: Modifier = Modifier
 ) {
-    Box(
+    val playbackState by playbackStateFlow.collectAsState()
+    val currentTrack by remember {
+        derivedStateOf {
+            playbackState.currentTrack!!
+        }
+    }
+    val isPlaying by remember {
+        derivedStateOf {
+            playbackState.isPlaying
+        }
+    }
+    val position by remember {
+        derivedStateOf {
+            playbackState.position
+        }
+    }
+
+    val progress = animateFloatAsState(
+        targetValue = (position.toFloat() / currentTrack.duration).coerceIn(0f, 1f),
+        animationSpec = tween(durationMillis = 1000, easing = LinearEasing),
+        label = "bottom-player-progress"
+    ).value
+
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(IntrinsicSize.Min)
+            .background(MaterialTheme.colorScheme.background)
+            .then(
+                if (applyNavigationBarsPadding) Modifier.navigationBarsPadding() else Modifier
+            )
             .clickable {
                 onClick()
             }
     ) {
-        val playbackState by playbackStateFlow.collectAsState()
-        val currentTrack by remember {
-            derivedStateOf {
-                playbackState.currentTrack!!
-            }
-        }
-        val isPlaying by remember {
-            derivedStateOf {
-                playbackState.isPlaying
-            }
-        }
-        val position by remember {
-            derivedStateOf {
-                playbackState.position
-            }
-        }
-
         Box(
             modifier = Modifier
-                .fillMaxHeight()
-                .fillMaxWidth(
-                    animateFloatAsState(
-                        targetValue = position.toFloat() / currentTrack.duration,
-                        animationSpec = tween(durationMillis = 1000, easing = LinearEasing),
-                        label = "bottom-player-progress"
-                    ).value
-                )
-                .background(color = MaterialTheme.colorScheme.surfaceContainerHigh)
-        )
+                .fillMaxWidth()
+                .height(2.dp)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.20f))
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(progress)
+                    .background(color = MaterialTheme.colorScheme.primary)
+            )
+        }
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .navigationBarsPadding()
-                .padding(28.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             AnimatedContent(
                 targetState = currentTrack,
+                modifier = Modifier.weight(1f),
                 transitionSpec = {
                     fadeIn() + slideInHorizontally(
                         initialOffsetX = { it / 5 }
@@ -386,83 +401,76 @@ fun BottomPlayer(
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
-                        .fillMaxWidth(0.7f)
+                        .fillMaxWidth()
                 ) {
                     CoverArt(
                         uri = currentTrack.coverArtUri,
                         onCoverArtLoaded = onCoverArtLoaded,
                         modifier = Modifier
                             .size(48.dp)
-                            .clip(ShapeDefaults.Small)
+                            .clip(RoundedCornerShape(12.dp))
                     )
 
-                    Spacer(modifier = Modifier.width(16.dp))
+                    Spacer(modifier = Modifier.width(12.dp))
 
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         val context = LocalContext.current
                         Text(
                             text = currentTrack.title
                                 ?: context.resources.getString(R.string.unknown_title),
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.basicMarquee()
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                         Text(
                             text = currentTrack.artist
                                 ?: context.resources.getString(R.string.unknown_artist),
-                            style = MaterialTheme.typography.bodyMedium,
+                            style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.basicMarquee()
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
                     }
                 }
             }
 
-            Row(
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                if (isPlaying) {
-                    IconButton(
-                        onClick = onPauseClick,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.Pause,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(48.dp)
-                        )
-                    }
-                } else {
-                    IconButton(
-                        onClick = onPlayClick,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Rounded.PlayArrow,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurface,
-                            modifier = Modifier.size(48.dp)
-                        )
-                    }
-                }
+            Spacer(modifier = Modifier.width(8.dp))
 
-                IconButton(
-                    onClick = onSeekToNextClick
-                ) {
-                    val layoutDirection = LocalLayoutDirection.current
-                    val isRtl = layoutDirection == LayoutDirection.Rtl
-                    Icon(
-                        imageVector = Icons.Rounded.SkipNext,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier
-                            .size(36.dp)
-                            .graphicsLayer {
-                                if (isRtl) {
-                                    rotationY = 180f
-                                }
+            FilledIconButton(
+                onClick = if (isPlaying) onPauseClick else onPlayClick,
+                modifier = Modifier.size(40.dp),
+                colors = IconButtonDefaults.filledIconButtonColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    contentColor = MaterialTheme.colorScheme.onPrimary
+                )
+            ) {
+                Icon(
+                    imageVector = if (isPlaying) Icons.Rounded.Pause
+                    else Icons.Rounded.PlayArrow,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            IconButton(
+                onClick = onSeekToNextClick,
+                modifier = Modifier.size(38.dp)
+            ) {
+                val layoutDirection = LocalLayoutDirection.current
+                val isRtl = layoutDirection == LayoutDirection.Rtl
+                Icon(
+                    imageVector = Icons.Rounded.SkipNext,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .size(26.dp)
+                        .graphicsLayer {
+                            if (isRtl) {
+                                rotationY = 180f
                             }
-                    )
-                }
+                        }
+                )
             }
         }
     }

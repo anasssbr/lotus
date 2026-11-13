@@ -9,9 +9,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ShapeDefaults
 import androidx.compose.material3.Text
@@ -21,6 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.dn0ne.player.R
 import com.dn0ne.player.app.domain.track.Track
@@ -51,10 +54,10 @@ fun TrackListItem(
                 onClick()
             }
             .background(
-                color = if (isCurrent) MaterialTheme.colorScheme.surfaceContainerLow else Color.Transparent
+                color = if (isCurrent) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent
             )
-            .padding(vertical = 8.dp)
-            .padding(start = 8.dp, end = if (dragHandle != null) 8.dp else 0.dp),
+            .padding(vertical = 6.dp)
+            .padding(start = if (dragHandle != null) 8.dp else 0.dp, end = if (dragHandle != null) 8.dp else 0.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -67,8 +70,8 @@ fun TrackListItem(
             CoverArt(
                 uri = track.coverArtUri,
                 modifier = Modifier
-                    .size(60.dp)
-                    .clip(ShapeDefaults.Small)
+                    .size(56.dp)
+                    .clip(RoundedCornerShape(14.dp))
             )
 
             Spacer(modifier = Modifier.width(16.dp))
@@ -78,13 +81,16 @@ fun TrackListItem(
                     text = track.title ?: context.resources.getString(R.string.unknown_title),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.basicMarquee()
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+                Spacer(modifier = Modifier.height(2.dp))
                 Text(
                     text = track.artist ?: context.resources.getString(R.string.unknown_artist),
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.basicMarquee()
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
             }
         }

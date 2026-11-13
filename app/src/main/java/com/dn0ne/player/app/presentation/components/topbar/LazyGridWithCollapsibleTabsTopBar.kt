@@ -1,36 +1,19 @@
 package com.dn0ne.player.app.presentation.components.topbar
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.AnimatedVisibilityScope
-import androidx.compose.animation.ExperimentalSharedTransitionApi
-import androidx.compose.animation.SharedTransitionLayout
-import androidx.compose.animation.SharedTransitionScope
-import androidx.compose.animation.core.FiniteAnimationSpec
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -42,15 +25,13 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ShapeDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -61,30 +42,25 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
-import androidx.compose.ui.input.nestedscroll.NestedScrollSource
-import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.util.fastFirstOrNull
-import com.dn0ne.player.app.presentation.components.animatable.rememberAnimatable
-import com.dn0ne.player.app.presentation.components.isSystemInLandscapeOrientation
+import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import my.nanihadesuka.compose.LazyVerticalGridScrollbar
 import my.nanihadesuka.compose.ScrollbarSettings
 
-@OptIn(
-    ExperimentalFoundationApi::class, ExperimentalSharedTransitionApi::class,
-    ExperimentalMaterial3Api::class
-)
+/**
+ * Library header: a fixed title row (provided through [topBarButtons]), a row of outlined
+ * filter chips and the paged content underneath.
+ *
+ * The chip row replaces the old collapsible tab titles, but it still drives the same pager,
+ * so swiping between sections keeps working.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LazyGridWithCollapsibleTabsTopBar(
     topBarTabs: List<Tab>,
@@ -103,11 +79,11 @@ fun LazyGridWithCollapsibleTabsTopBar(
     contentHorizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
     contentVerticalArrangement: Arrangement.Vertical = Arrangement.Top,
     enableScrollbar: Boolean = true,
+    showTabsRow: Boolean = true,
     modifier: Modifier = Modifier,
     gridCells: (tab: Tab) -> GridCells = { GridCells.Fixed(1) },
     tabContent: LazyGridScope.(tab: Tab) -> Unit
 ) {
-    val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
 
     var selectedTab by rememberSaveable {
@@ -148,114 +124,26 @@ fun LazyGridWithCollapsibleTabsTopBar(
         }
     }
 
-    val isInLandscapeOrientation = isSystemInLandscapeOrientation()
-    val minTopBarHeight = remember { with(density) { minTopBarHeight.toPx() } }
-    val maxTopBarHeight = remember {
-        with(density) {
-            if (isInLandscapeOrientation) {
-                maxTopBarHeightLandscape.toPx()
-            } else maxTopBarHeight.toPx()
-        }
-    }
-    val topBarHeight = rememberAnimatable(
-        initialValue = if (collapsedByDefault || isInLandscapeOrientation) {
-            minTopBarHeight
-        } else maxTopBarHeight
-    )
-
-    LaunchedEffect(isInLandscapeOrientation) {
-        topBarHeight.snapTo(maxTopBarHeight)
-    }
-
-    val lastSyncedTab = remember { mutableStateOf(selectedTab) }
-    LaunchedEffect(selectedTab) {
-        if (lastSyncedTab.value == selectedTab) return@LaunchedEffect
-        lastSyncedTab.value = selectedTab
-
-        val targetHeight = if (gridStateOf(selectedTab).firstVisibleItemIndex == 0) {
-            maxTopBarHeight
-        } else minTopBarHeight
-        topBarHeight.animateTo(
-            targetValue = targetHeight,
-            animationSpec = spring(stiffness = Spring.StiffnessLow)
-        )
-    }
-
-    LaunchedEffect(topBarHeight.value) {
-        collapseFraction(
-            (topBarHeight.value - minTopBarHeight) / (maxTopBarHeight - minTopBarHeight)
-        )
-    }
-
-    val topBarScrollConnection = remember(resolvedGridStates) {
-        return@remember object : NestedScrollConnection {
-            override fun onPreScroll(
-                available: Offset,
-                source: NestedScrollSource
-            ): Offset {
-                val gridState = gridStateOf(selectedTab)
-                val previousHeight = topBarHeight.value
-                val newHeight = if (gridState.firstVisibleItemIndex >= 0 && available.y < 0) {
-                    (previousHeight + available.y).coerceIn(
-                        minTopBarHeight,
-                        maxTopBarHeight
-                    )
-                } else if (
-                    gridState.firstVisibleItemIndex == 0 &&
-                    gridState.layoutInfo.visibleItemsInfo.firstOrNull()?.offset?.y == 0
-                ) {
-                    (previousHeight + available.y).coerceIn(
-                        minTopBarHeight,
-                        maxTopBarHeight
-                    )
-                } else previousHeight
-
-                coroutineScope.launch {
-                    topBarHeight.snapTo(newHeight)
-                }
-                return Offset(0f, newHeight - previousHeight)
-            }
-
-            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                coroutineScope.launch {
-                    val threshold = (maxTopBarHeight - minTopBarHeight)
-                    topBarHeight.animateTo(
-                        targetValue = if (topBarHeight.value < threshold) minTopBarHeight else maxTopBarHeight,
-                        animationSpec = spring(stiffness = Spring.StiffnessLow)
-                    )
-                }
-
-                return super.onPostFling(consumed, available)
-            }
-        }
-    }
-
-    var showTabRow by remember {
-        mutableStateOf(false)
-    }
-    val isColumnScrollInProgress by remember(resolvedGridStates) {
-        derivedStateOf {
-            gridStateOf(selectedTab).isScrollInProgress
-        }
-    }
-
-    LaunchedEffect(isColumnScrollInProgress) {
-        if (showTabRow && isColumnScrollInProgress) {
-            showTabRow = false
-        }
-    }
-
-    Box(
-        modifier = modifier
-            .nestedScroll(topBarScrollConnection)
-    ) {
-        Column {
-            Spacer(
-                modifier = Modifier
-                    .height(with(density) { topBarHeight.value.toDp() })
-            )
+    Box(modifier = modifier) {
+        Column(modifier = Modifier.fillMaxSize()) {
             BackHandler(enabled = selectedTab != defaultSelectedTab) {
                 selectTab(defaultSelectedTab)
+            }
+
+            Box(modifier = Modifier.fillMaxWidth()) {
+                CompositionLocalProvider(
+                    LocalContentColor provides MaterialTheme.colorScheme.onSurface
+                ) {
+                    topBarButtons(selectedTab)
+                }
+            }
+
+            if (showTabsRow) {
+                LibraryTabsRow(
+                    tabs = topBarTabs,
+                    selectedTab = selectedTab,
+                    onSelect = { selectTab(it) }
+                )
             }
 
             HorizontalPager(
@@ -302,286 +190,75 @@ fun LazyGridWithCollapsibleTabsTopBar(
             }
         }
 
+        // Cheap, static fade so the list melts into the background above the mini player.
         Box(
             modifier = Modifier
+                .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .height(with(density) { topBarHeight.value.toDp() })
-        ) {
-            val tabListState = rememberLazyListState()
-            val viewportWidth by remember {
-                derivedStateOf {
-                    tabListState.layoutInfo.viewportSize.width
-                }
-            }
-            val boundTransformAnimationSpec = remember { spring<Rect>() }
-            val contentAnimationSpec = remember { spring<Float>() }
+                .height(110.dp)
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        0.55f to MaterialTheme.colorScheme.background.copy(alpha = 0.6f),
+                        1f to MaterialTheme.colorScheme.background
+                    )
+                )
+        )
+    }
+}
 
-            CompositionLocalProvider(
-                LocalContentColor provides MaterialTheme.colorScheme.onSurface
+@Composable
+private fun LibraryTabsRow(
+    tabs: List<Tab>,
+    selectedTab: Tab,
+    onSelect: (Tab) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val listState = rememberLazyListState()
+
+    LaunchedEffect(selectedTab, tabs) {
+        val index = tabs.indexOf(selectedTab)
+        if (index < 0) return@LaunchedEffect
+        val visible = listState.layoutInfo.visibleItemsInfo
+        if (visible.isNotEmpty() && visible.none { it.index == index }) {
+            listState.animateScrollToItem(index)
+        }
+    }
+
+    LazyRow(
+        state = listState,
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp, bottom = 6.dp),
+        contentPadding = PaddingValues(horizontal = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        itemsIndexed(
+            items = tabs,
+            key = { _, tab -> tab.name }
+        ) { _, tab ->
+            val selected = tab == selectedTab
+            val accent = MaterialTheme.colorScheme.primary
+
+            Box(
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .border(
+                        width = 1.dp,
+                        color = if (selected) accent else MaterialTheme.colorScheme.outlineVariant,
+                        shape = CircleShape
+                    )
+                    .background(if (selected) accent.copy(alpha = 0.14f) else Color.Transparent)
+                    .clickable { onSelect(tab) }
+                    .padding(horizontal = 15.dp, vertical = 8.dp)
             ) {
-                SharedTransitionLayout {
-                    val selectedTabIndex by remember {
-                        derivedStateOf {
-                            topBarTabs.indexOf(selectedTab)
-                        }
-                    }
-                    AnimatedContent(
-                        targetState = showTabRow,
-                        transitionSpec = {
-                            scaleIn(contentAnimationSpec, initialScale = 1.5f) +
-                                    fadeIn(contentAnimationSpec) togetherWith
-                                    scaleOut(contentAnimationSpec, targetScale = 1.5f) +
-                                    fadeOut(contentAnimationSpec)
-                        },
-                        label = "top-bar-title-animation"
-                    ) { state ->
-                        when (state) {
-                            false -> {
-                                val listItemsCount by remember {
-                                    derivedStateOf {
-                                        tabListState.layoutInfo.totalItemsCount
-                                    }
-                                }
-
-                                LaunchedEffect(listItemsCount) {
-                                    tabListState.scrollToItem(
-                                        index = selectedTabIndex + 1,
-                                    )
-
-                                    tabListState.scrollToItem(
-                                        index = selectedTabIndex + 1,
-                                        scrollOffset = -viewportWidth / 2 + (tabListState
-                                            .layoutInfo
-                                            .visibleItemsInfo
-                                            .fastFirstOrNull { it.index == selectedTabIndex + 1 }?.size ?: 0) / 2
-                                    )
-                                }
-
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clickable(
-                                            interactionSource = remember {
-                                                MutableInteractionSource()
-                                            },
-                                            indication = null
-                                        ) {
-                                            showTabRow = true
-                                        }
-                                ) {
-                                    TabTitle(
-                                        selectedTab = selectedTab,
-                                        style = tabTitleTextStyle,
-                                        sharedTransitionScope = this@SharedTransitionLayout,
-                                        animatedVisibilityScope = this@AnimatedContent,
-                                        boundTransformAnimationSpec = boundTransformAnimationSpec,
-                                        modifier = Modifier.align(Alignment.Center)
-                                    )
-
-                                    topBarButtons(selectedTab)
-                                }
-                            }
-
-                            true -> {
-                                LaunchedEffect(Unit) {
-                                    tabListState.scrollToItem(
-                                        index = topBarTabs.indexOf(selectedTab) + 1,
-                                    )
-
-                                    tabListState.scrollToItem(
-                                        index = topBarTabs.indexOf(selectedTab) + 1,
-                                        scrollOffset = -viewportWidth / 2 + (tabListState
-                                            .layoutInfo
-                                            .visibleItemsInfo
-                                            .fastFirstOrNull { it.index == topBarTabs.indexOf(selectedTab) + 1 }?.size ?: 0) / 2
-                                    )
-                                }
-
-                                LazyRow(
-                                    state = tabListState,
-                                    modifier = Modifier
-                                        .fillMaxSize()
-                                        .clickable(
-                                            interactionSource = remember {
-                                                MutableInteractionSource()
-                                            },
-                                            indication = null
-                                        ) {
-                                            showTabRow = false
-                                        },
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    item {
-                                        Spacer(
-                                            modifier = Modifier.width(
-                                                with(density) {
-                                                    (viewportWidth / 2.5f).toDp()
-                                                }
-                                            )
-                                        )
-                                    }
-
-                                    itemsIndexed(
-                                        items = topBarTabs,
-                                        key = { index, tab -> "$index-$tab" }
-                                    ) { index, tab ->
-                                        TabRowTitle(
-                                            selectedTab = selectedTab,
-                                            tab = tab,
-                                            style = tabRowTitleTextStyle,
-                                            onClick = {
-                                                selectTab(tab)
-                                                showTabRow = false
-                                            },
-                                            sharedTransitionScope = this@SharedTransitionLayout,
-                                            animatedVisibilityScope = this@AnimatedContent,
-                                            boundTransformAnimationSpec = boundTransformAnimationSpec
-                                        )
-                                    }
-
-                                    item {
-                                        Spacer(
-                                            modifier = Modifier.width(
-                                                with(density) {
-                                                    (viewportWidth / 2.5f).toDp()
-                                                }
-                                            )
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
+                Text(
+                    text = stringResource(tab.titleResId),
+                    style = MaterialTheme.typography.labelLarge,
+                    letterSpacing = 0.8.sp,
+                    color = if (selected) accent else MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-        }
-    }
-}
-
-@OptIn(ExperimentalSharedTransitionApi::class)
-@Composable
-fun TabTitle(
-    selectedTab: Tab,
-    style: TextStyle,
-    sharedTransitionScope: SharedTransitionScope,
-    animatedVisibilityScope: AnimatedVisibilityScope,
-    boundTransformAnimationSpec: FiniteAnimationSpec<Rect>,
-    modifier: Modifier = Modifier
-) {
-    with(sharedTransitionScope) {
-        Column(
-            modifier = modifier
-                .width(IntrinsicSize.Min)
-        ) {
-            val context = LocalContext.current
-            Text(
-                text = context.resources.getString(selectedTab.titleResId),
-                style = style,
-                modifier = Modifier
-                    .sharedBounds(
-                        sharedContentState = rememberSharedContentState(selectedTab),
-                        animatedVisibilityScope = animatedVisibilityScope,
-                        boundsTransform = { _, _ ->
-                            boundTransformAnimationSpec
-                        }
-                    )
-            )
-
-            Box(
-                modifier = Modifier
-                    .sharedBounds(
-                        sharedContentState = rememberSharedContentState(
-                            "indicator"
-                        ),
-                        animatedVisibilityScope = animatedVisibilityScope,
-                        resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
-                        boundsTransform = { _, _ ->
-                            boundTransformAnimationSpec
-                        }
-                    )
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .clip(ShapeDefaults.ExtraLarge)
-                    .background(
-                        color = MaterialTheme.colorScheme.primary
-                    )
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalSharedTransitionApi::class)
-@Composable
-fun TabRowTitle(
-    selectedTab: Tab,
-    tab: Tab,
-    style: TextStyle,
-    onClick: () -> Unit,
-    sharedTransitionScope: SharedTransitionScope,
-    animatedVisibilityScope: AnimatedVisibilityScope,
-    boundTransformAnimationSpec: FiniteAnimationSpec<Rect>,
-    modifier: Modifier = Modifier
-) {
-    with(sharedTransitionScope) {
-        Column(
-            modifier = modifier
-                .width(IntrinsicSize.Min)
-                .heightIn(min = 60.dp)
-                .clickable(
-                    interactionSource = remember {
-                        MutableInteractionSource()
-                    },
-                    indication = null
-                ) {
-                    onClick()
-                }
-                .padding(horizontal = 14.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            val context = LocalContext.current
-            Text(
-                text = context.resources.getString(tab.titleResId),
-                style = style,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .sharedBounds(
-                        sharedContentState = rememberSharedContentState(tab),
-                        animatedVisibilityScope = animatedVisibilityScope,
-                        boundsTransform = { _, _ ->
-                            boundTransformAnimationSpec
-                        }
-                    )
-            )
-
-            val primary = MaterialTheme.colorScheme.primary
-            val color = if (selectedTab == tab) {
-                primary
-            } else Color.Transparent
-
-            Box(
-                modifier = Modifier
-                    .sharedBounds(
-                        sharedContentState = rememberSharedContentState(
-                            if (color != Color.Transparent) {
-                                "indicator"
-                            } else {
-                                "invisible-indicator"
-                            }
-                        ),
-                        animatedVisibilityScope = animatedVisibilityScope,
-                        resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
-                        boundsTransform = { _, _ ->
-                            boundTransformAnimationSpec
-                        }
-                    )
-                    .fillMaxWidth()
-                    .height(2.dp)
-                    .clip(ShapeDefaults.ExtraLarge)
-                    .background(
-                        color = color
-                    )
-            )
         }
     }
 }
