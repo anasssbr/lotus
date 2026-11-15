@@ -972,6 +972,12 @@ fun PlayerScreen(
                                 onLyricsClick = {
                                     viewModel.onEvent(PlayerScreenEvent.OnLyricsClick)
                                 },
+                                positionProvider = {
+                                    viewModel.player?.currentPosition ?: 0L
+                                },
+                                onSettingsClick = {
+                                    viewModel.onEvent(PlayerScreenEvent.OnSettingsClick)
+                                },
                                 settings = viewModel.settings,
                                 showBottomBar = showBottomBar,
                                 onRemoveFromQueueClick = {

@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -44,6 +45,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
@@ -62,6 +64,12 @@ fun WavingSeekBar(
     waveWidth: Dp = 6.dp,
     strokeWidth: Dp = 3.dp,
     handleSize: Dp = 20.dp,
+    filledColor: Color = MaterialTheme.colorScheme.primary,
+    restColor: Color = MaterialTheme.colorScheme.surfaceContainerHigh,
+    textColor: Color = MaterialTheme.colorScheme.onSurfaceVariant,
+    handleColor: Color = MaterialTheme.colorScheme.primary,
+    textStyle: TextStyle = MaterialTheme.typography.titleMedium,
+    circleHandle: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val progressBarHeight by remember {
@@ -161,7 +169,7 @@ fun WavingSeekBar(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 FilledSeekBarSegment(
-                    color = MaterialTheme.colorScheme.primary,
+                    color = filledColor,
                     enableWaving = enableWaving && isPlaying && !isHandleInDrag,
                     waveBackwards = !isLtr,
                     waveWidth = with(density) {
@@ -181,7 +189,7 @@ fun WavingSeekBar(
                 )
 
                 RestSeekBarSegment(
-                    color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                    color = restColor,
                     strokeWidth = with(density) {
                         strokeWidth.toPx()
                     },
@@ -242,8 +250,14 @@ fun WavingSeekBar(
                     .graphicsLayer {
                         rotationZ = if (isPlaying) handleRotation.value else lastAngle
                     }
-                    .clip(RoundedCornerShape(handleSize / 3))
-                    .background(color = MaterialTheme.colorScheme.primary)
+                    .clip(
+                        if (circleHandle) {
+                            CircleShape
+                        } else {
+                            RoundedCornerShape(handleSize / 3)
+                        }
+                    )
+                    .background(color = handleColor)
             )
         }
 
@@ -282,13 +296,13 @@ fun WavingSeekBar(
 
             Text(
                 text = handlePositionText,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = textStyle,
+                color = textColor
             )
             Text(
                 text = durationText,
-                style = MaterialTheme.typography.titleMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                style = textStyle,
+                color = textColor
             )
         }
     }

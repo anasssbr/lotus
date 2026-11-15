@@ -1,90 +1,159 @@
 package com.dn0ne.player.app.presentation.components.playback
 
+import android.os.Build
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.EaseInOut
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.StartOffset
-import androidx.compose.animation.core.StartOffsetType
-import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsDraggedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBackIosNew
+import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.KeyboardArrowDown
+import androidx.compose.material.icons.rounded.KeyboardArrowUp
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ShapeDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.lerp
-import androidx.compose.ui.util.fastFirstOrNull
 import com.dn0ne.player.R
-import com.dn0ne.player.app.presentation.components.topbar.LazyColumnWithCollapsibleTopBar
+import com.dn0ne.player.app.presentation.components.CoverArt
 import com.dn0ne.player.app.presentation.components.ProviderText
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.launch
-import kotlin.math.PI
-import kotlin.math.sin
+import kotlinx.coroutines.flow.first
+import kotlin.math.abs
+
+private val lyricsModePreferences = mutableStateMapOf<String, Boolean>()
+private var wordHighlightEnabled by mutableStateOf(true)
+
+private const val LYRICS_LOOKAHEAD_MS = 150L
+private const val LYRICS_OFFSET_PREFS = "settings"
+private const val LYRICS_OFFSET_KEY_PREFIX = "lyrics-offset-"
+
+private fun lyricsOffsetKey(trackKey: String) = LYRICS_OFFSET_KEY_PREFIX + trackKey
+
+private fun readLyricsOffset(context: android.content.Context, trackKey: String): Long {
+    if (trackKey.isEmpty()) return 0L
+    return context.getSharedPreferences(LYRICS_OFFSET_PREFS, android.content.Context.MODE_PRIVATE)
+        .getLong(lyricsOffsetKey(trackKey), 0L)
+}
+
+private fun writeLyricsOffset(
+    context: android.content.Context,
+    trackKey: String,
+    offsetMs: Long
+) {
+    if (trackKey.isEmpty()) return
+    context.getSharedPreferences(LYRICS_OFFSET_PREFS, android.content.Context.MODE_PRIVATE)
+        .edit()
+        .putLong(lyricsOffsetKey(trackKey), offsetMs)
+        .apply()
+}
+
+private fun activeLineIndex(
+    lines: List<Pair<Int, String>>,
+    positionMs: Long
+): Int {
+    var low = 0
+    var high = lines.lastIndex
+    var result = 0
+
+    while (low <= high) {
+        val mid = (low + high) ushr 1
+        if (lines[mid].first <= positionMs) {
+            result = mid
+            low = mid + 1
+        } else {
+            high = mid - 1
+        }
+    }
+
+    return result
+}
+
+private fun formatOffset(offsetMs: Long): String {
+    val seconds = offsetMs / 1000.0
+    val sign = if (offsetMs > 0) "+" else ""
+    return "$sign${String.format(java.util.Locale.US, "%.1f", seconds)}s"
+}
 
 @Composable
 fun LyricsSheet(
@@ -94,249 +163,617 @@ fun LyricsSheet(
     contentColor: Color,
     onBackClick: () -> Unit,
     onSeekTo: (Long) -> Unit,
+    positionProvider: () -> Long,
     modifier: Modifier = Modifier
 ) {
     BackHandler {
         onBackClick()
     }
+
     val playbackState by playbackStateFlow.collectAsState()
-    val isLoadingLyrics by remember {
-        derivedStateOf {
-            playbackState.isLoadingLyrics
-        }
-    }
     val lyrics by remember {
         derivedStateOf {
             playbackState.lyrics
         }
     }
-    var collapseFraction by remember {
-        mutableFloatStateOf(0f)
+    val isLoadingLyrics by remember {
+        derivedStateOf {
+            playbackState.isLoadingLyrics
+        }
     }
+    val currentTrack = playbackState.currentTrack
     val context = LocalContext.current
 
-    var showSyncedLyrics by remember(lyrics) {
-        mutableStateOf<Boolean?>(
-            when {
-                lyrics?.synced != null -> true
-                lyrics?.plain != null -> false
-                else -> null
-            }
+    val trackKey = currentTrack?.uri?.toString().orEmpty()
+    val hasSynced = lyrics?.synced?.isNotEmpty() == true
+
+    val livePosition = remember {
+        mutableLongStateOf(playbackState.position)
+    }
+    val isPlaying = playbackState.isPlaying
+    val currentTrackUri = currentTrack?.uri
+    LaunchedEffect(isPlaying, currentTrackUri) {
+        if (!isPlaying) {
+            livePosition.longValue = playbackState.position
+            return@LaunchedEffect
+        }
+
+        while (true) {
+            withFrameNanos { }
+            livePosition.longValue = positionProvider()
+        }
+    }
+
+    var offsetMs by remember(trackKey) {
+        mutableLongStateOf(readLyricsOffset(context, trackKey))
+    }
+    LaunchedEffect(trackKey) {
+        offsetMs = readLyricsOffset(context, trackKey)
+    }
+
+    var showSynced by remember(trackKey) {
+        mutableStateOf(lyricsModePreferences[trackKey] ?: hasSynced)
+    }
+    LaunchedEffect(trackKey, hasSynced) {
+        val saved = lyricsModePreferences[trackKey]
+        showSynced = if (saved != null) saved && hasSynced else hasSynced
+    }
+
+    var showModeMenu by remember {
+        mutableStateOf(false)
+    }
+    var showTimingMenu by remember {
+        mutableStateOf(false)
+    }
+
+    val lyricStyle = remember(lyricsTextStyle) {
+        lyricsTextStyle.copy(
+            textAlign = TextAlign.Start,
+            fontWeight = FontWeight.Bold,
+            lineHeight = lyricsTextStyle.fontSize * 1.5f
         )
     }
 
-    CompositionLocalProvider(
-        LocalContentColor provides contentColor
-    ) {
-        val listState = rememberLazyListState()
-        val coroutineScope = rememberCoroutineScope()
-
-        LaunchedEffect(lyrics) {
-            listState.scrollToItem(0)
+    val syncedLines = remember(lyrics) {
+        lyrics?.synced?.let { raw ->
+            if ((raw.firstOrNull()?.first ?: 0) > 3000) {
+                listOf(0 to "") + raw
+            } else raw
         }
+    }
 
-        if (showSyncedLyrics == true) {
-            LaunchedEffect(Unit) {
-                val index = lyrics?.synced?.indexOfFirst { playbackState.position < it.first } ?: -1
-                if (index >= 0) {
-                    listState.animateScrollToItem(
-                        index = index,
-                        scrollOffset = -listState.layoutInfo.viewportSize.height / 3
-                    )
-                }
+    val activeIndex by remember(syncedLines) {
+        derivedStateOf {
+            syncedLines?.let {
+                activeLineIndex(
+                    lines = it,
+                    positionMs = livePosition.longValue + LYRICS_LOOKAHEAD_MS + offsetMs
+                )
+            } ?: 0
+        }
+    }
+
+    var tappedIndex by remember(syncedLines) {
+        mutableStateOf(-1)
+    }
+    LaunchedEffect(syncedLines, activeIndex) {
+        if (tappedIndex >= 0 && syncedLines != null) {
+            val tappedTime = syncedLines.getOrNull(tappedIndex)?.first ?: 0
+            if (activeIndex >= tappedIndex || livePosition.longValue >= tappedTime) {
+                tappedIndex = -1
             }
         }
+    }
+    val displayedIndex = if (tappedIndex >= 0) tappedIndex else activeIndex
 
-        LazyColumnWithCollapsibleTopBar(
-            topBarContent = {
-                CompositionLocalProvider(
-                    LocalContentColor provides contentColor
+    val listState = rememberLazyListState()
+    var pullDown by remember {
+        mutableFloatStateOf(0f)
+    }
+    val closeThreshold = with(LocalDensity.current) {
+        110.dp.toPx()
+    }
+    val nestedScrollConnection = remember {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (available.y > 0f && !listState.canScrollBackward) {
+                    pullDown += available.y
+                } else if (available.y < 0f) {
+                    pullDown = 0f
+                }
+                return Offset.Zero
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (pullDown > closeThreshold) {
+                    onBackClick()
+                }
+                pullDown = 0f
+                return Velocity.Zero
+            }
+        }
+    }
+
+    var autoFollow by remember {
+        mutableStateOf(true)
+    }
+    var forceAlign by remember {
+        mutableStateOf(false)
+    }
+    val isDragged by listState.interactionSource.collectIsDraggedAsState()
+    val isScrollInProgress = listState.isScrollInProgress
+
+    LaunchedEffect(isDragged) {
+        if (isDragged) {
+            autoFollow = false
+        }
+    }
+
+    LaunchedEffect(isScrollInProgress, isDragged, autoFollow) {
+        if (autoFollow || isScrollInProgress || isDragged) {
+            return@LaunchedEffect
+        }
+        delay(8000)
+        autoFollow = true
+        forceAlign = true
+    }
+
+    LaunchedEffect(lyrics) {
+        listState.scrollToItem(0)
+    }
+
+    LaunchedEffect(showSynced, displayedIndex, autoFollow, forceAlign, syncedLines) {
+        if (!showSynced || syncedLines == null || !autoFollow) {
+            return@LaunchedEffect
+        }
+        val viewport = snapshotFlow {
+            listState.layoutInfo.viewportSize.height
+        }.first { it > 0 }
+        val targetOffset = viewport * 0.30f
+
+        val visible = listState.layoutInfo.visibleItemsInfo
+            .firstOrNull { it.index == displayedIndex }
+        if (visible == null) {
+            listState.animateScrollToItem(
+                index = displayedIndex,
+                scrollOffset = -targetOffset.toInt()
+            )
+            forceAlign = false
+            return@LaunchedEffect
+        }
+
+        val delta = visible.offset - targetOffset
+        val shouldScroll = if (forceAlign) {
+            abs(delta) > 1f
+        } else {
+            delta > 8f
+        }
+
+        if (shouldScroll) {
+            listState.animateScrollBy(
+                value = delta,
+                animationSpec = tween(
+                    durationMillis = 450,
+                    easing = FastOutSlowInEasing
+                )
+            )
+        }
+        forceAlign = false
+    }
+
+    val selectMode: (Boolean) -> Unit = { synced ->
+        showSynced = synced
+        lyricsModePreferences[trackKey] = synced
+        showModeMenu = false
+    }
+
+    CompositionLocalProvider(LocalContentColor provides Color.White) {
+        BoxWithConstraints(
+            modifier = modifier.fillMaxSize()
+        ) {
+            val density = LocalDensity.current
+            val widthPx = with(density) {
+                maxWidth.roundToPx()
+            }
+            val heightPx = with(density) {
+                maxHeight.roundToPx()
+            }
+
+            if (currentTrack != null) {
+                NowPlayingArtworkBackground(
+                    track = currentTrack,
+                    screenWidthPx = widthPx,
+                    screenHeightPx = heightPx,
+                    dim = 0.27f,
+                    dimOnDarkArtwork = 0.15f,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(containerColor)
+                )
+            }
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Black.copy(alpha = 0.12f),
+                            0.35f to Color.Transparent,
+                            1f to Color.Black.copy(alpha = 0.45f)
+                        )
+                    )
+            )
+
+            Column(modifier = Modifier.fillMaxSize()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    IconButton(
-                        onClick = onBackClick,
+                    Box(
                         modifier = Modifier
-                            .align(Alignment.BottomStart)
-                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.30f))
+                            .clickable(onClick = onBackClick),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            imageVector = Icons.Rounded.ArrowBackIosNew,
-                            contentDescription = context.resources.getString(R.string.close_lyrics_sheet)
+                            imageVector = Icons.Rounded.Close,
+                            contentDescription = context.resources.getString(R.string.close_lyrics_sheet),
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
                         )
                     }
 
-                    Text(
-                        text = context.resources.getString(R.string.lyrics),
-                        fontSize = lerp(
-                            MaterialTheme.typography.titleLarge.fontSize,
-                            MaterialTheme.typography.displaySmall.fontSize,
-                            collapseFraction
-                        ),
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.align(Alignment.Center)
-                    )
-
-                    if (lyrics?.synced != null && lyrics?.plain != null && showSyncedLyrics != null) {
-                        LyricsTypeSwitch(
-                            isSynced = showSyncedLyrics!!,
-                            onIsSyncedSwitch = {
-                                showSyncedLyrics = it
-                            },
-                            enabled = collapseFraction == 1f,
+                    currentTrack?.let { track ->
+                        CoverArt(
+                            uri = track.coverArtUri,
                             modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .padding(bottom = 6.dp)
-                                .alpha(2 * (collapseFraction - 0.5f))
+                                .size(42.dp)
+                                .clip(RoundedCornerShape(10.dp))
                         )
                     }
                 }
-            },
-            collapseFraction = {
-                collapseFraction = it
-            },
-            listState = listState,
-            contentPadding = PaddingValues(horizontal = 24.dp),
-            enableScrollbar = false,
-            modifier = modifier
-                .background(color = containerColor)
-                .clickable(enabled = false, onClick = {})
-                .safeDrawingPadding()
-        ) {
-            when (showSyncedLyrics) {
-                null -> {
-                    item(key = isLoadingLyrics) {
+
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                ) {
+                    if (lyrics == null) {
                         Column(
-                            modifier = Modifier.fillMaxSize(),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
+                            modifier = Modifier
+                                .align(Alignment.Center)
+                                .padding(horizontal = 32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
+                            Text(
+                                text = context.resources.getString(
+                                    if (isLoadingLyrics) {
+                                        R.string.loading_lyrics
+                                    } else {
+                                        R.string.cant_find_lyrics
+                                    }
+                                ),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White.copy(alpha = 0.85f),
+                                textAlign = TextAlign.Center
+                            )
+
                             if (isLoadingLyrics) {
-                                Text(
-                                    text = context.resources.getString(R.string.loading_lyrics),
-                                    style = MaterialTheme.typography.titleMedium
-                                )
+                                Spacer(modifier = Modifier.height(14.dp))
 
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                LinearProgressIndicator(
-                                    trackColor = MaterialTheme.colorScheme.primary.copy(alpha = .5f),
-                                    modifier = Modifier.width(100.dp)
+                                CircularProgressIndicator(
+                                    color = Color.White,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(22.dp)
                                 )
-                            } else {
-                                Text(text = context.resources.getString(R.string.cant_find_lyrics))
                             }
                         }
-                    }
-                }
-
-                true -> {
-                    lyrics?.synced?.let { synced ->
-                        val synced = synced.firstOrNull()?.first?.let { firstTime ->
-                            if (firstTime > 5000) {
-                                synced.toMutableList().apply {
-                                    add(0, 0 to "")
+                    } else {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .graphicsLayer {
+                                    compositingStrategy = CompositingStrategy.Offscreen
                                 }
-                            } else synced
-                        } ?: synced
-
-                        itemsIndexed(
-                            items = synced,
-                            key = { index, (time, _) -> "$index-$time" }
-                        ) { index, (time, line) ->
-                            Column(
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                val nextTime = remember {
-                                    synced.getOrNull(index + 1)?.first ?: Int.MAX_VALUE
-                                }
-
-                                if (line.isNotBlank()) {
-                                    SyncedLyricsLine(
-                                        positionFlow = playbackStateFlow.map { it.position },
-                                        time = time,
-                                        nextTime = nextTime,
-                                        line = line,
-                                        style = lyricsTextStyle,
-                                        onClick = {
-                                            onSeekTo(time.toLong())
-                                        },
-                                        onBecomeCurrent = { textHeight ->
-                                            val isItemVisible = listState.layoutInfo
-                                                .visibleItemsInfo
-                                                .fastFirstOrNull { it.index == index } != null
-
-                                            if (isItemVisible && !listState.isScrollInProgress) {
-                                                val offsetToCenterText =
-                                                    textHeight.toInt() -
-                                                            listState.layoutInfo.viewportSize.height / 2
-
-                                                coroutineScope.launch {
-                                                    listState.animateScrollToItem(
-                                                        index = index,
-                                                        scrollOffset = offsetToCenterText
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        modifier = Modifier.fillMaxWidth()
+                                .drawWithContent {
+                                    drawContent()
+                                    val topFade = 48.dp.toPx()
+                                    val bottomFade = 80.dp.toPx()
+                                    val height = size.height
+                                    val topStop = (topFade / height).coerceIn(0f, 0.4f)
+                                    val bottomStop =
+                                        (1f - bottomFade / height).coerceIn(0.6f, 1f)
+                                    drawRect(
+                                        brush = Brush.verticalGradient(
+                                            0f to Color.Transparent,
+                                            topStop to Color.Black,
+                                            bottomStop to Color.Black,
+                                            1f to Color.Transparent
+                                        ),
+                                        blendMode = BlendMode.DstIn
                                     )
-                                } else {
-                                    BubblesLine(
-                                        positionFlow = playbackStateFlow.map { it.position },
-                                        time = time,
-                                        nextTime = nextTime,
-                                        modifier = Modifier.align(
-                                            when(lyricsTextStyle.textAlign) {
-                                                TextAlign.Center -> Alignment.CenterHorizontally
-                                                TextAlign.End -> Alignment.End
-                                                else -> Alignment.Start
-                                            }
+                                }
+                                .nestedScroll(nestedScrollConnection),
+                            contentPadding = PaddingValues(
+                                start = 24.dp,
+                                end = 24.dp,
+                                top = 48.dp,
+                                bottom = 180.dp
+                            )
+                        ) {
+                            if (showSynced && syncedLines != null) {
+                                itemsIndexed(
+                                    items = syncedLines,
+                                    key = { index, (time, _) -> "synced-$index-$time" }
+                                ) { index, (time, text) ->
+                                    if (text.isBlank()) {
+                                        GapDots(
+                                            active = index == displayedIndex,
+                                            modifier = Modifier.fillMaxWidth()
                                         )
+                                    } else {
+                                        val startMs = time.toLong()
+                                        val nextStart = syncedLines.getOrNull(index + 1)
+                                            ?.first
+                                            ?.toLong()
+                                        val endMs = ((nextStart ?: (startMs + 6000)) - 100)
+                                            .coerceIn(startMs + 200, startMs + 6000)
+
+                                        SyncedLyricsLine(
+                                            text = text,
+                                            style = lyricStyle,
+                                            distance = abs(index - displayedIndex),
+                                            livePosition = livePosition,
+                                            positionShiftMs = LYRICS_LOOKAHEAD_MS + offsetMs,
+                                            startTimeMs = startMs,
+                                            endTimeMs = endMs,
+                                            karaokeEnabled = wordHighlightEnabled,
+                                            onClick = {
+                                                tappedIndex = index
+                                                autoFollow = true
+                                                forceAlign = true
+                                                onSeekTo(time.toLong())
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                }
+                            } else {
+                                lyrics?.plain?.let { plain ->
+                                    itemsIndexed(
+                                        items = plain,
+                                        key = { index, line -> "plain-$index-$line" }
+                                    ) { _, line ->
+                                        Text(
+                                            text = line,
+                                            style = lyricStyle.copy(
+                                                shadow = lyricsShadow()
+                                            ),
+                                            color = Color.White.copy(alpha = 0.85f),
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 5.dp)
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (lyrics?.areFromRemote == true) {
+                                item(key = "provider") {
+                                    ProviderText(
+                                        providerText = context.resources.getString(R.string.lyrics_provided_by),
+                                        uri = context.resources.getString(R.string.lrclib_uri),
+                                        textAlign = TextAlign.Start,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(top = 16.dp)
                                     )
                                 }
-
-                                Spacer(modifier = Modifier.height(8.dp))
-                            }
-                        }
-
-                        if (lyrics?.areFromRemote == true) {
-                            item {
-                                ProviderText(
-                                    providerText = context.resources.getString(R.string.lyrics_provided_by),
-                                    uri = context.resources.getString(R.string.lrclib_uri),
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
                             }
                         }
                     }
                 }
+            }
 
-                false -> {
-                    lyrics?.plain?.let { plain ->
+            if (lyrics != null) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(bottom = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    if (!autoFollow) {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(Color.Black.copy(alpha = 0.35f))
+                                .clickable {
+                                    autoFollow = true
+                                    forceAlign = true
+                                }
+                                .padding(horizontal = 14.dp, vertical = 7.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Rounded.KeyboardArrowDown,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.8f),
+                                modifier = Modifier.size(16.dp)
+                            )
 
-                        itemsIndexed(
-                            items = plain,
-                            key = { index, line -> "$index-$line" }
-                        ) { index, line ->
-                            Column {
-                                PlainLyricsLine(
-                                    line = line,
-                                    style = lyricsTextStyle,
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                Spacer(modifier = Modifier.height(8.dp))
-                            }
+                            Spacer(modifier = Modifier.width(4.dp))
+
+                            Text(
+                                text = context.resources.getString(R.string.lyrics_now),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White
+                            )
                         }
 
-                        if (lyrics?.areFromRemote == true) {
-                            item {
-                                ProviderText(
-                                    providerText = context.resources.getString(R.string.lyrics_provided_by),
-                                    uri = context.resources.getString(R.string.lrclib_uri),
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.fillMaxWidth()
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+
+                    Spacer(modifier = Modifier.height(54.dp))
+
+                    Box {
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(Color.Black.copy(alpha = 0.35f))
+                                .pointerInput(trackKey) {
+                                    detectTapGestures(
+                                        onTap = {
+                                            showModeMenu = true
+                                        },
+                                        onLongPress = {
+                                            showTimingMenu = true
+                                        }
+                                    )
+                                }
+                                .padding(horizontal = 18.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = context.resources.getString(
+                                    if (showSynced) R.string.synced else R.string.plain
+                                ),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White
+                            )
+
+                            Spacer(modifier = Modifier.width(6.dp))
+
+                            Icon(
+                                imageVector = Icons.Rounded.KeyboardArrowUp,
+                                contentDescription = null,
+                                tint = Color.White.copy(alpha = 0.8f),
+                                modifier = Modifier.size(18.dp)
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showModeMenu,
+                            onDismissRequest = {
+                                showModeMenu = false
+                            },
+                            modifier = Modifier.background(Color(0xFF161616))
+                        ) {
+                            if (hasSynced) {
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = context.resources.getString(R.string.synced),
+                                            color = Color.White
+                                        )
+                                    },
+                                    onClick = {
+                                        selectMode(true)
+                                    }
                                 )
                             }
+
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = context.resources.getString(R.string.plain),
+                                        color = Color.White
+                                    )
+                                },
+                                onClick = {
+                                    selectMode(false)
+                                }
+                            )
+
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = context.resources.getString(
+                                            R.string.word_highlight,
+                                            context.resources.getString(
+                                                if (wordHighlightEnabled) {
+                                                    R.string.on
+                                                } else {
+                                                    R.string.off
+                                                }
+                                            )
+                                        ),
+                                        color = Color.White
+                                    )
+                                },
+                                onClick = {
+                                    wordHighlightEnabled = !wordHighlightEnabled
+                                }
+                            )
+                        }
+
+                        DropdownMenu(
+                            expanded = showTimingMenu,
+                            onDismissRequest = {
+                                showTimingMenu = false
+                            },
+                            modifier = Modifier.background(Color(0xFF161616))
+                        ) {
+                            Text(
+                                text = context.resources.getString(
+                                    R.string.lyrics_timing,
+                                    formatOffset(offsetMs)
+                                ),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(
+                                    start = 16.dp,
+                                    end = 16.dp,
+                                    top = 10.dp,
+                                    bottom = 4.dp
+                                )
+                            )
+
+                            listOf(-500L, -100L, 100L, 500L).forEach { delta ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = formatOffset(delta),
+                                            color = Color.White
+                                        )
+                                    },
+                                    onClick = {
+                                        val newOffset = (offsetMs + delta)
+                                            .coerceIn(-3000L, 3000L)
+                                        offsetMs = newOffset
+                                        writeLyricsOffset(context, trackKey, newOffset)
+                                    }
+                                )
+                            }
+
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        text = context.resources.getString(R.string.reset),
+                                        color = Color.White
+                                    )
+                                },
+                                onClick = {
+                                    offsetMs = 0L
+                                    writeLyricsOffset(context, trackKey, 0L)
+                                    showTimingMenu = false
+                                }
+                            )
                         }
                     }
                 }
@@ -345,85 +782,217 @@ fun LyricsSheet(
     }
 }
 
+private fun lyricsShadow(): Shadow {
+    return Shadow(
+        color = Color.Black.copy(alpha = 0.55f),
+        offset = Offset(0f, 2f),
+        blurRadius = 6f
+    )
+}
+
 @Composable
-fun LyricsTypeSwitch(
-    isSynced: Boolean,
-    onIsSyncedSwitch: (Boolean) -> Unit,
-    contentColor: Color = LocalContentColor.current,
-    enabled: Boolean = true,
+private fun SyncedLyricsLine(
+    text: String,
+    style: TextStyle,
+    distance: Int,
+    livePosition: State<Long>,
+    positionShiftMs: Long,
+    startTimeMs: Long,
+    endTimeMs: Long,
+    karaokeEnabled: Boolean,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
-    Box(
-        modifier = modifier
-            .width(IntrinsicSize.Min)
-            .height(IntrinsicSize.Min)
-            .clip(ShapeDefaults.ExtraLarge)
-            .background(color = contentColor.copy(alpha = .1f))
+    val isActive = distance == 0
+    val targetAlpha = when (distance) {
+        0 -> 1f
+        1 -> 0.80f
+        2 -> 0.65f
+        3 -> 0.55f
+        else -> 0.50f
+    }
+    val targetBlur = distance.coerceIn(0, 4).toFloat()
+
+    val lineAlpha by animateFloatAsState(
+        targetValue = targetAlpha,
+        animationSpec = tween(320, easing = FastOutSlowInEasing),
+        label = "lyrics-line-alpha"
+    )
+    val lineBlur by animateFloatAsState(
+        targetValue = targetBlur,
+        animationSpec = tween(320, easing = FastOutSlowInEasing),
+        label = "lyrics-line-blur"
+    )
+    val lineScale by animateFloatAsState(
+        targetValue = if (isActive) 1.04f else 1f,
+        animationSpec = spring(
+            dampingRatio = 0.8f,
+            stiffness = Spring.StiffnessMediumLow
+        ),
+        label = "lyrics-line-scale"
+    )
+
+    val interactionSource = remember {
+        MutableInteractionSource()
+    }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val pressScale by animateFloatAsState(
+        targetValue = if (isPressed) 0.97f else 1f,
+        animationSpec = tween(120),
+        label = "lyrics-line-press"
+    )
+
+    val blurModifier = if (
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && lineBlur > 0.05f
     ) {
-        var midPoint by remember {
-            mutableStateOf(0.dp)
+        Modifier.blur(lineBlur.dp)
+    } else {
+        Modifier
+    }
+
+    val karaoke = isActive && karaokeEnabled
+    val lineStyle = style.copy(
+        shadow = lyricsShadow()
+    )
+
+    val karaokeText by remember(text, startTimeMs, endTimeMs, karaoke) {
+        derivedStateOf {
+            if (karaoke) {
+                buildKaraokeText(
+                    text = text,
+                    positionMs = livePosition.value + positionShiftMs,
+                    startTimeMs = startTimeMs,
+                    endTimeMs = endTimeMs
+                )
+            } else {
+                null
+            }
         }
-        val density = LocalDensity.current
-        val capsuleOffset by animateDpAsState(
-            targetValue = if (isSynced) 0.dp else midPoint,
-            label = "capsule-offset-animation"
+    }
+
+    Text(
+        text = karaokeText ?: AnnotatedString(text),
+        style = lineStyle,
+        color = Color.White.copy(alpha = if (karaoke) 1f else lineAlpha),
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+            .graphicsLayer {
+                scaleX = lineScale * pressScale
+                scaleY = lineScale * pressScale
+                transformOrigin = TransformOrigin(0f, 0.5f)
+            }
+            .then(blurModifier)
+            .padding(vertical = 6.dp)
+    )
+}
+
+private const val KARAOKE_FADE_MS = 300f
+private const val KARAOKE_MIN_WORD_MS = 120L
+private const val KARAOKE_DIM_ALPHA = 0.40f
+
+private fun buildKaraokeText(
+    text: String,
+    positionMs: Long,
+    startTimeMs: Long,
+    endTimeMs: Long
+): AnnotatedString {
+    val words = mutableListOf<IntRange>()
+    var index = 0
+    while (index < text.length) {
+        if (text[index].isWhitespace()) {
+            index++
+        } else {
+            val wordStart = index
+            while (index < text.length && !text[index].isWhitespace()) {
+                index++
+            }
+            words.add(wordStart until index)
+        }
+    }
+
+    if (words.isEmpty()) {
+        return AnnotatedString(text)
+    }
+
+    val totalChars = words.sumOf { it.last - it.first + 1 }.coerceAtLeast(1)
+    val lineDuration = (endTimeMs - startTimeMs).coerceAtLeast(1L)
+
+    val builder = AnnotatedString.Builder(text)
+    var cursor = startTimeMs
+
+    words.forEach { range ->
+        val chars = range.last - range.first + 1
+        val nominal = lineDuration * chars / totalChars
+        val wordDuration = nominal.coerceAtLeast(KARAOKE_MIN_WORD_MS)
+        val wordStart = cursor
+
+        val progress = ((positionMs - wordStart).toFloat() / KARAOKE_FADE_MS)
+            .coerceIn(0f, 1f)
+        val eased = 1f - (1f - progress) * (1f - progress) * (1f - progress)
+        val alpha = KARAOKE_DIM_ALPHA + (1f - KARAOKE_DIM_ALPHA) * eased
+        val glow = 0.30f * (1f - eased)
+        val lift = 0.06f * (1f - eased)
+
+        builder.addStyle(
+            style = SpanStyle(
+                color = Color.White.copy(alpha = alpha),
+                shadow = if (glow > 0.01f) {
+                    Shadow(
+                        color = Color.White.copy(alpha = glow),
+                        offset = Offset.Zero,
+                        blurRadius = 8f
+                    )
+                } else {
+                    null
+                },
+                baselineShift = if (lift > 0.001f) BaselineShift(lift) else null
+            ),
+            start = range.first,
+            end = range.last + 1
         )
 
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
-                .fillMaxWidth(.5f)
-                .offset(x = capsuleOffset)
-                .clip(ShapeDefaults.ExtraLarge)
-                .background(color = contentColor.copy(alpha = .1f))
-        )
+        cursor += wordDuration
+    }
 
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .onGloballyPositioned {
-                    midPoint = with(density) { (it.size.width / 2).toDp() }
-                }
-        ) {
-            Text(
-                text = context.resources.getString(R.string.synced),
-                color = contentColor,
-                fontWeight = FontWeight.Medium,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .weight(1f)
-                    .clip(ShapeDefaults.ExtraLarge)
-                    .clickable(
-                        enabled = !isSynced && enabled,
-                        indication = null,
-                        interactionSource = remember {
-                            MutableInteractionSource()
-                        }
-                    ) {
-                        onIsSyncedSwitch(true)
-                    }
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+    return builder.toAnnotatedString()
+}
+
+@Composable
+private fun GapDots(
+    active: Boolean,
+    modifier: Modifier = Modifier
+) {
+    val transition = rememberInfiniteTransition(label = "gap-dots")
+
+    Row(
+        modifier = modifier.padding(vertical = 12.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        repeat(3) { index ->
+            val value by transition.animateFloat(
+                initialValue = 0.25f,
+                targetValue = 1f,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(durationMillis = 600, easing = EaseInOut),
+                    repeatMode = RepeatMode.Reverse,
+                    initialStartOffset = StartOffset(index * 200)
+                ),
+                label = "gap-dot-$index"
             )
 
-            Text(
-                text = context.resources.getString(R.string.plain),
-                color = contentColor,
-                fontWeight = FontWeight.Medium,
-                textAlign = TextAlign.Center,
+            Box(
                 modifier = Modifier
-                    .weight(1f)
-                    .clip(ShapeDefaults.ExtraLarge)
-                    .clickable(
-                        enabled = isSynced && enabled,
-                        indication = null,
-                        interactionSource = remember {
-                            MutableInteractionSource()
-                        }
-                    ) {
-                        onIsSyncedSwitch(false)
-                    }
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .size(7.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Color.White.copy(alpha = if (active) value else 0.30f)
+                    )
             )
         }
     }
@@ -441,291 +1010,5 @@ fun PlainLyricsLine(
         style = style,
         color = color,
         modifier = modifier
-    )
-}
-
-@Composable
-fun SyncedLyricsLine(
-    positionFlow: Flow<Long>,
-    time: Int,
-    nextTime: Int,
-    line: String,
-    style: TextStyle,
-    onClick: () -> Unit,
-    onBecomeCurrent: (textHeight: Float) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    val position by positionFlow.collectAsState(0)
-    var textHeight by remember {
-        mutableFloatStateOf(0f)
-    }
-    val isCurrentLine by remember {
-        derivedStateOf {
-            position in time..nextTime
-        }
-    }
-
-    LaunchedEffect(isCurrentLine) {
-        if (isCurrentLine) {
-            onBecomeCurrent(textHeight)
-        }
-    }
-
-    val progressFraction by remember {
-        derivedStateOf {
-            ((position.toFloat() - time) / (nextTime - time))
-                .coerceIn(0f, 1f)
-        }
-    }
-
-    val gradientOrigin by remember {
-        derivedStateOf {
-            progressFraction * textHeight
-        }
-    }
-
-    val localContentColor = LocalContentColor.current
-
-    val color by animateColorAsState(
-        targetValue = if (isCurrentLine) {
-            localContentColor
-        } else localContentColor.copy(alpha = .5f),
-        label = "lyrics-color-animation"
-    )
-
-    val scale by animateFloatAsState(
-        targetValue = if (isCurrentLine) 1.05f else 1f,
-        label = "current-line-scale-animation"
-    )
-
-    Text(
-        text = line,
-        style = style
-            .copy(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        color,
-                        color.copy(alpha = color.alpha / 2)
-                    ),
-                    startY = gradientOrigin - 10f,
-                    endY = gradientOrigin + 10f
-                ),
-                shadow = Shadow(
-                    color = localContentColor.copy(alpha = .5f),
-                    blurRadius = if (isCurrentLine) progressFraction * 20f else 0f
-                )
-            ),
-        color = color,
-        modifier = modifier
-            .onGloballyPositioned {
-                textHeight = it.size.height.toFloat()
-            }
-            .graphicsLayer {
-                transformOrigin = when (style.textAlign) {
-                    TextAlign.Center -> TransformOrigin(.5f, .5f)
-                    TextAlign.End -> TransformOrigin(1f, .5f)
-                    else -> TransformOrigin(0f, .5f)
-                }
-                scaleX = scale
-                scaleY = scale
-            }
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null,
-                onClick = onClick
-            )
-    )
-}
-
-@Composable
-fun BubblesLine(
-    positionFlow: Flow<Long>,
-    time: Int,
-    nextTime: Int,
-    modifier: Modifier = Modifier
-) {
-    val position by positionFlow.collectAsState(-1)
-    var bubblesContainerHeight by remember {
-        mutableFloatStateOf(0f)
-    }
-    val isCurrentLine by remember {
-        derivedStateOf {
-            position >= 0L && position in time..nextTime
-        }
-    }
-
-    val progressFraction by remember {
-        derivedStateOf {
-            ((position.toFloat() - time) / (nextTime - time))
-                .coerceIn(0f, 1f)
-        }
-    }
-
-    val density = LocalDensity.current
-    val height = with(density) {
-        MaterialTheme.typography.headlineMedium.fontSize.toDp()
-    }
-
-    val infiniteTransition = rememberInfiniteTransition(
-        label = "bubbles-transition"
-    )
-
-    val firstBubbleProgress by remember {
-        derivedStateOf {
-            (progressFraction / .33f).coerceIn(0f, 1f)
-        }
-    }
-
-    val firstBubbleTranslationX by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 3f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2000, easing = EaseInOut),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "first-bubble-translation-x"
-    )
-
-    val secondBubbleProgress by remember {
-        derivedStateOf {
-            ((progressFraction - .33f) / .33f).coerceIn(0f, 1f)
-        }
-    }
-
-    val secondBubbleTranslationX by infiniteTransition.animateFloat(
-        initialValue = -2f,
-        targetValue = 2f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2000, easing = EaseInOut),
-            repeatMode = RepeatMode.Reverse,
-            initialStartOffset = StartOffset(
-                offsetMillis = 500,
-                offsetType = StartOffsetType.FastForward
-            )
-        ),
-        label = "first-bubble-translation-x"
-    )
-
-    val thirdBubbleProgress by remember {
-        derivedStateOf {
-            ((progressFraction - .33f * 2) / .33f).coerceIn(0f, 1f)
-        }
-    }
-
-    val thirdBubbleTranslationX by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = -3f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2000, easing = EaseInOut),
-            repeatMode = RepeatMode.Reverse,
-            initialStartOffset = StartOffset(
-                offsetMillis = 1000,
-                offsetType = StartOffsetType.FastForward
-            )
-        ),
-        label = "first-bubble-translation-x"
-    )
-
-    val scale by animateFloatAsState(
-        targetValue = if (progressFraction < .97f) 1f else 1.2f,
-        label = "bubbles-scale-before-next-line"
-    )
-
-    Box(
-        modifier = modifier
-            .padding(horizontal = 8.dp, vertical = 4.dp)
-            .height(height)
-            .onGloballyPositioned {
-                bubblesContainerHeight = it.size.height.toFloat()
-            },
-    ) {
-        AnimatedVisibility(
-            visible = isCurrentLine,
-            enter = scaleIn(),
-            exit = scaleOut(),
-            modifier = Modifier
-                .fillMaxHeight()
-                .graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                }
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxHeight(),
-                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                verticalAlignment = Alignment.Bottom
-            ) {
-                Bubble(
-                    bubbleHeight = height,
-                    containerHeight = bubblesContainerHeight,
-                    animationProgress = firstBubbleProgress,
-                    translationX = firstBubbleTranslationX,
-                    translationOffset = secondBubbleTranslationX
-                )
-
-                Bubble(
-                    bubbleHeight = height,
-                    containerHeight = bubblesContainerHeight,
-                    animationProgress = secondBubbleProgress,
-                    translationX = secondBubbleTranslationX,
-                    translationOffset = thirdBubbleTranslationX
-                )
-
-                Bubble(
-                    bubbleHeight = height,
-                    containerHeight = bubblesContainerHeight,
-                    animationProgress = thirdBubbleProgress,
-                    translationX = thirdBubbleTranslationX,
-                    translationOffset = firstBubbleTranslationX
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun Bubble(
-    bubbleHeight: Dp,
-    containerHeight: Float,
-    animationProgress: Float,
-    translationX: Float,
-    translationOffset: Float,
-    color: Color = LocalContentColor.current,
-    modifier: Modifier = Modifier
-) {
-    Box(
-        modifier = modifier
-            .size(bubbleHeight * .7f)
-            .graphicsLayer {
-                this.translationY =
-                    -containerHeight / 6 *
-                            (sin(20 * (animationProgress - .25f) / PI.toFloat()) / 2 + .5f) +
-                            translationX * translationOffset / 2
-
-                this.translationX = translationX
-                val scale = .5f + animationProgress / 2
-                scaleX = scale
-                scaleY = scale
-            }
-            .drawBehind {
-                drawCircle(
-                    radius = size.width,
-                    brush = Brush.radialGradient(
-                        0f to Color.Transparent,
-                        .5f to Color.Transparent,
-                        .5f to color.copy(alpha = animationProgress / 2 - .25f),
-                        .6f to color.copy(alpha = animationProgress / 3 - .25f),
-                        .8f to Color.Transparent,
-                        radius = size.width
-                    )
-                )
-
-                drawCircle(
-                    color = color.copy(
-                        alpha = .25f + animationProgress
-                    )
-                )
-            }
     )
 }

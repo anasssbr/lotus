@@ -100,6 +100,10 @@
     <string name="close_player_sheet">Close player sheet</string>
     <string name="playback_mode_toggle">Toggle playback mode</string>
     <string name="show_lyrics">Show lyrics</string>
+    <string name="open_lyrics">Open lyrics</string>
+    <string name="share_track">Share track</string>
+    <string name="favorite_track">Add to favorites</string>
+    <string name="unfavorite_track">Remove from favorites</string>
     <string name="set_sleep_timer">Set sleep timer</string>
     <string name="sleep_timer">Sleep timer</string>
     <string name="short_minutes">min</string>
@@ -224,6 +228,7 @@
     <string name="close_lyrics_sheet">Close lyrics sheet</string>
     <string name="loading_lyrics">Loading lyrics</string>
     <string name="synced">Synced</string>
+    <string name="lyrics_timing">Lyrics timing: %1$s</string>
     <string name="plain">Plain</string>
 
     <!-- Lyrics screen errors -->
@@ -330,6 +335,10 @@
     <string name="center">Center</string>
     <string name="end">End</string>
     <string name="reset">Reset</string>
+    <string name="on">On</string>
+    <string name="off">Off</string>
+    <string name="word_highlight">Word highlight: %1$s</string>
+    <string name="lyrics_now">Now</string>
 
     <!-- Music scan settings -->
     <string name="include_music_folder">Include Music folder</string>

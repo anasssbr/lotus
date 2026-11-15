@@ -31,6 +31,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.dn0ne.player.R
@@ -203,6 +204,7 @@ fun TrackMenuButton(
     onGoToAlbumClick: () -> Unit,
     onGoToArtistClick: () -> Unit,
     onRemoveFromPlaylistClick: (() -> Unit)? = null,
+    tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
     Box {
         var isMenuExpanded by remember {
@@ -218,7 +220,7 @@ fun TrackMenuButton(
             Icon(
                 imageVector = Icons.Rounded.MoreVert,
                 contentDescription = context.resources.getString(R.string.track_menu_button),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                tint = tint
             )
         }
 
