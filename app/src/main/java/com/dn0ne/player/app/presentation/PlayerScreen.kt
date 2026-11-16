@@ -109,6 +109,7 @@ import com.dn0ne.player.app.presentation.components.playlist.AddNewPlaylistRow
 import com.dn0ne.player.app.presentation.components.playlist.AddToOrCreatePlaylistBottomSheet
 import com.dn0ne.player.app.presentation.components.playlist.DeletePlaylistDialog
 import com.dn0ne.player.app.presentation.components.playlist.MutablePlaylist
+import com.dn0ne.player.app.presentation.components.playlist.NewPlaylistScreen
 import com.dn0ne.player.app.presentation.components.playlist.Playlist
 import com.dn0ne.player.app.presentation.components.playlist.RenamePlaylistBottomSheet
 import com.dn0ne.player.app.presentation.components.playlist.playlistCards
@@ -118,6 +119,9 @@ import com.dn0ne.player.app.presentation.components.selection.selectionList
 import com.dn0ne.player.app.presentation.components.selection.selectionRows
 import com.dn0ne.player.app.presentation.components.settings.SettingsSheet
 import com.dn0ne.player.app.presentation.components.settings.Theme
+import com.dn0ne.player.app.presentation.components.snackbar.SnackbarAction
+import com.dn0ne.player.app.presentation.components.snackbar.SnackbarController
+import com.dn0ne.player.app.presentation.components.snackbar.SnackbarEvent
 import com.dn0ne.player.ui.theme.LotusNearBlack
 import com.dn0ne.player.ui.theme.LotusNeutralVariant
 import com.dn0ne.player.ui.theme.LotusShapes
@@ -1071,11 +1075,11 @@ fun PlayerScreen(
                         .fillMaxSize()
                 )
 
-                if (showAddToOrCreatePlaylistSheet) {
+                if (showAddToOrCreatePlaylistSheet && !showCreatePlaylistOnly) {
                     val playlists by viewModel.playlists.collectAsState()
                     AddToOrCreatePlaylistBottomSheet(
                         playlists = playlists,
-                        createOnly = showCreatePlaylistOnly,
+                        createOnly = false,
                         onDismissRequest = {
                             showAddToOrCreatePlaylistSheet = false
                             showCreatePlaylistOnly = false
@@ -1110,6 +1114,55 @@ fun PlayerScreen(
                     dominantColorState = dominantColorState,
                     modifier = Modifier.fillMaxSize()
                 )
+
+                if (showAddToOrCreatePlaylistSheet && showCreatePlaylistOnly) {
+                    val allTracks by viewModel.trackList.collectAsState()
+                    val playlistsForCreation by viewModel.playlists.collectAsState()
+                    val overlayScope = rememberCoroutineScope()
+
+                    NewPlaylistScreen(
+                        allTracks = allTracks,
+                        currentQueue = playbackState.playlist?.trackList ?: emptyList(),
+                        playlists = playlistsForCreation,
+                        onLoadMostPlayed = { viewModel.getMostPlayedTracks() },
+                        onDismiss = {
+                            showAddToOrCreatePlaylistSheet = false
+                            showCreatePlaylistOnly = false
+                        },
+                        onCreate = { name, tracks ->
+                            viewModel.onEvent(
+                                PlayerScreenEvent.OnCreatePlaylistClick(
+                                    name = name,
+                                    tracks = tracks
+                                )
+                            )
+                            showAddToOrCreatePlaylistSheet = false
+                            showCreatePlaylistOnly = false
+
+                            overlayScope.launch {
+                                SnackbarController.sendEvent(
+                                    SnackbarEvent(
+                                        message = R.string.playlist_created,
+                                        action = SnackbarAction(
+                                            name = R.string.open
+                                        ) {
+                                            viewModel.onEvent(
+                                                PlayerScreenEvent.OnPlaylistSelection(
+                                                    Playlist(
+                                                        name = name,
+                                                        trackList = tracks
+                                                    )
+                                                )
+                                            )
+                                            navController.navigate(PlayerRoutes.MutablePlaylist)
+                                        }
+                                    )
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
         }

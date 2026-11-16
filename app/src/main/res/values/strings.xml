@@ -261,6 +261,34 @@
     <string name="playlist_already_exists_error">This name is already taken.</string>
     <string name="track_is_already_on_playlist">This track is already on the playlist.</string>
 
+    <!-- New playlist screen -->
+    <string name="new_playlist_title">New Playlist</string>
+    <string name="new_playlist_title_hint">Give your playlist a title</string>
+    <string name="quick_start_empty">Empty</string>
+    <string name="quick_start_current_queue">Current queue</string>
+    <string name="quick_start_most_played">Most played</string>
+    <string name="quick_start_recently_added">Recently added</string>
+    <string name="quick_start_random_mix">Random mix</string>
+    <string name="quick_start_hint_no_queue">Nothing is playing right now.</string>
+    <string name="quick_start_hint_no_history">No listening history yet.</string>
+    <string name="quick_start_hint_no_tracks">Your library is empty.</string>
+    <string name="add_songs">Add songs</string>
+    <string name="songs_selected_count">%1$d selected</string>
+    <string name="done">Done</string>
+    <string name="clear">Clear</string>
+    <string name="open">Open</string>
+    <string name="playlist_created">Playlist created</string>
+    <string name="discard_playlist_title">Discard playlist?</string>
+    <string name="discard_playlist_text">The title and songs you picked won\'t be saved.</string>
+    <string name="discard">Discard</string>
+    <string name="keep_editing">Keep editing</string>
+    <string name="reroll_colors">New colors</string>
+    <string name="pick_playlist_cover">Pick a cover</string>
+    <string name="remove_playlist_cover">Remove cover</string>
+    <string name="remove_song">Remove song</string>
+    <string name="search_songs_hint">Search songs</string>
+    <string name="no_songs_selected_hint">No songs yet. Add some or start from a quick pick.</string>
+
     <!-- Settings sheet -->
     <string name="settings">Settings</string>
     <string name="close_settings_sheet">Close settings sheet</string>
@@ -338,6 +366,10 @@
     <string name="on">On</string>
     <string name="off">Off</string>
     <string name="word_highlight">Word highlight: %1$s</string>
+    <string name="word_speed">Word speed</string>
+    <string name="word_speed_slower">Slower</string>
+    <string name="word_speed_normal">Normal</string>
+    <string name="word_speed_faster">Faster</string>
     <string name="lyrics_now">Now</string>
 
     <!-- Music scan settings -->

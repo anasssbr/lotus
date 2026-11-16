@@ -183,6 +183,7 @@ val playerModule = module {
             lyricsRepository = get(),
             lyricsReader = get(),
             playlistRepository = get(),
+            listeningHistoryRepository = get(),
             unsupportedArtworkEditFormats = get<MetadataWriter>().unsupportedArtworkEditFormats,
             settings = get(),
             musicScanner = get(),

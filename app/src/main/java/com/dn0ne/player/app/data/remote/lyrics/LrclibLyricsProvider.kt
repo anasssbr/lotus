@@ -5,7 +5,8 @@ import android.util.Log
 import androidx.compose.ui.util.fastForEach
 import com.dn0ne.player.R
 import com.dn0ne.player.app.domain.lyrics.Lyrics
-import com.dn0ne.player.app.domain.lyrics.toSyncedLyrics
+import com.dn0ne.player.app.domain.lyrics.LyricsWord
+import com.dn0ne.player.app.domain.lyrics.toParsedSyncedLyrics
 import com.dn0ne.player.app.domain.result.DataError
 import com.dn0ne.player.app.domain.result.Result
 import com.dn0ne.player.app.domain.track.Track
@@ -274,8 +275,11 @@ class LrclibLyricsProvider(
     private fun LyricsDto.toLyrics(trackUri: String): Lyrics {
         val plainLyrics = this.plainLyrics?.split('\n')
         var syncedLyrics: List<Pair<Int, String>>? = null
+        var syncedWords: List<List<LyricsWord>?>? = null
         try {
-            syncedLyrics = this.syncedLyrics?.toSyncedLyrics()
+            val parsed = this.syncedLyrics?.toParsedSyncedLyrics()
+            syncedLyrics = parsed?.lines
+            syncedWords = parsed?.words
         } catch (e: IllegalArgumentException) {
             Log.i(logTag, e.message, e)
         }
@@ -283,7 +287,8 @@ class LrclibLyricsProvider(
         return Lyrics(
             uri = trackUri,
             plain = plainLyrics,
-            synced = syncedLyrics
+            synced = syncedLyrics,
+            syncedWords = syncedWords
         )
     }
 

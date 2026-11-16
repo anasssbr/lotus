@@ -16,11 +16,12 @@ import com.dn0ne.player.app.data.LyricsReader
 import com.dn0ne.player.app.data.SavedPlayerState
 import com.dn0ne.player.app.data.remote.lyrics.LyricsProvider
 import com.dn0ne.player.app.data.remote.metadata.MetadataProvider
+import com.dn0ne.player.app.data.repository.ListeningHistoryRepository
 import com.dn0ne.player.app.data.repository.LyricsRepository
 import com.dn0ne.player.app.data.repository.PlaylistRepository
 import com.dn0ne.player.app.data.repository.TrackRepository
 import com.dn0ne.player.app.domain.lyrics.Lyrics
-import com.dn0ne.player.app.domain.lyrics.toSyncedLyrics
+import com.dn0ne.player.app.domain.lyrics.toParsedSyncedLyrics
 import com.dn0ne.player.app.domain.metadata.Metadata
 import com.dn0ne.player.app.domain.playback.PlaybackMode
 import com.dn0ne.player.app.domain.result.DataError
@@ -69,6 +70,7 @@ class PlayerViewModel(
     private val lyricsRepository: LyricsRepository,
     private val lyricsReader: LyricsReader,
     private val playlistRepository: PlaylistRepository,
+    private val listeningHistoryRepository: ListeningHistoryRepository,
     private val unsupportedArtworkEditFormats: List<String>,
     val settings: Settings,
     private val musicScanner: MusicScanner,
@@ -178,6 +180,19 @@ class PlayerViewModel(
         started = SharingStarted.WhileSubscribed(5000L),
         initialValue = emptyList()
     )
+
+    /** Most played tracks from the last [days] days, resolved against the current library. */
+    suspend fun getMostPlayedTracks(limit: Int = 25, days: Int = 30): List<Track> =
+        withContext(Dispatchers.IO) {
+            val played = listeningHistoryRepository.getMostPlayedLastNDays(
+                days = days,
+                limit = limit
+            )
+            if (played.isEmpty()) return@withContext emptyList()
+
+            val tracksByUri = _trackList.value.associateBy { it.uri.toString() }
+            played.mapNotNull { tracksByUri[it.trackUri] }
+        }
 
     private val _selectedPlaylist = MutableStateFlow<Playlist?>(null)
     val selectedPlaylist = _selectedPlaylist.stateIn(
@@ -1177,7 +1192,7 @@ class PlayerViewModel(
                     playlistRepository.insertPlaylist(
                         Playlist(
                             name = event.name,
-                            trackList = emptyList()
+                            trackList = event.tracks
                         )
                     )
                 }
@@ -1510,12 +1525,13 @@ class PlayerViewModel(
     fun onLyricsPicked(lyrics: String) {
         _trackInfoSheetState.value.track?.let { track ->
             val lyrics = try {
-                val syncedLyrics = lyrics.toSyncedLyrics()
+                val parsed = lyrics.toParsedSyncedLyrics()
 
                 Lyrics(
                     uri = track.uri.toString(),
-                    synced = syncedLyrics,
-                    plain = syncedLyrics.map { it.second },
+                    synced = parsed.lines,
+                    syncedWords = parsed.words,
+                    plain = parsed.lines.map { it.second },
                     areFromRemote = false
                 )
             } catch (_: IllegalArgumentException) {

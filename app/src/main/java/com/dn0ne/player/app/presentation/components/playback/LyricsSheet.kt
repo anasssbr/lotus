@@ -94,6 +94,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import com.dn0ne.player.R
+import com.dn0ne.player.app.domain.lyrics.LyricsWord
 import com.dn0ne.player.app.presentation.components.CoverArt
 import com.dn0ne.player.app.presentation.components.ProviderText
 import kotlinx.coroutines.delay
@@ -107,6 +108,13 @@ private var wordHighlightEnabled by mutableStateOf(true)
 private const val LYRICS_LOOKAHEAD_MS = 150L
 private const val LYRICS_OFFSET_PREFS = "settings"
 private const val LYRICS_OFFSET_KEY_PREFIX = "lyrics-offset-"
+private const val LYRICS_WORD_SPEED_KEY = "lyrics-word-speed"
+
+private const val WORD_SPEED_SLOWER = 1.15f
+private const val WORD_SPEED_NORMAL = 1f
+private const val WORD_SPEED_FASTER = 0.85f
+
+private const val ACTIVE_LINE_SCALE = 1.04f
 
 private fun lyricsOffsetKey(trackKey: String) = LYRICS_OFFSET_KEY_PREFIX + trackKey
 
@@ -125,6 +133,18 @@ private fun writeLyricsOffset(
     context.getSharedPreferences(LYRICS_OFFSET_PREFS, android.content.Context.MODE_PRIVATE)
         .edit()
         .putLong(lyricsOffsetKey(trackKey), offsetMs)
+        .apply()
+}
+
+private fun readWordSpeed(context: android.content.Context): Float {
+    return context.getSharedPreferences(LYRICS_OFFSET_PREFS, android.content.Context.MODE_PRIVATE)
+        .getFloat(LYRICS_WORD_SPEED_KEY, WORD_SPEED_NORMAL)
+}
+
+private fun writeWordSpeed(context: android.content.Context, factor: Float) {
+    context.getSharedPreferences(LYRICS_OFFSET_PREFS, android.content.Context.MODE_PRIVATE)
+        .edit()
+        .putFloat(LYRICS_WORD_SPEED_KEY, factor)
         .apply()
 }
 
@@ -211,6 +231,10 @@ fun LyricsSheet(
         offsetMs = readLyricsOffset(context, trackKey)
     }
 
+    var wordSpeed by remember {
+        mutableFloatStateOf(readWordSpeed(context))
+    }
+
     var showSynced by remember(trackKey) {
         mutableStateOf(lyricsModePreferences[trackKey] ?: hasSynced)
     }
@@ -239,6 +263,18 @@ fun LyricsSheet(
             if ((raw.firstOrNull()?.first ?: 0) > 3000) {
                 listOf(0 to "") + raw
             } else raw
+        }
+    }
+
+    val syncedWordTimes = remember(lyrics, syncedLines) {
+        val rawLines = lyrics?.synced
+        val rawWords = lyrics?.syncedWords
+        if (rawLines == null || rawWords == null || syncedLines == null) {
+            null
+        } else if (syncedLines.size == rawLines.size + 1) {
+            listOf<List<LyricsWord>?>(null) + rawWords
+        } else {
+            rawWords
         }
     }
 
@@ -539,6 +575,8 @@ fun LyricsSheet(
                                             positionShiftMs = LYRICS_LOOKAHEAD_MS + offsetMs,
                                             startTimeMs = startMs,
                                             endTimeMs = endMs,
+                                            wordTimes = syncedWordTimes?.getOrNull(index),
+                                            wordSpeedFactor = wordSpeed,
                                             karaokeEnabled = wordHighlightEnabled,
                                             onClick = {
                                                 tappedIndex = index
@@ -546,7 +584,9 @@ fun LyricsSheet(
                                                 forceAlign = true
                                                 onSeekTo(time.toLong())
                                             },
-                                            modifier = Modifier.fillMaxWidth()
+                                            modifier = Modifier.fillMaxWidth(
+                                                1f / ACTIVE_LINE_SCALE
+                                            )
                                         )
                                     }
                                 }
@@ -761,6 +801,41 @@ fun LyricsSheet(
                                 )
                             }
 
+                            Text(
+                                text = context.resources.getString(R.string.word_speed),
+                                style = MaterialTheme.typography.labelMedium,
+                                color = Color.White.copy(alpha = 0.7f),
+                                modifier = Modifier.padding(
+                                    start = 16.dp,
+                                    end = 16.dp,
+                                    top = 10.dp,
+                                    bottom = 4.dp
+                                )
+                            )
+
+                            listOf(
+                                WORD_SPEED_SLOWER to R.string.word_speed_slower,
+                                WORD_SPEED_NORMAL to R.string.word_speed_normal,
+                                WORD_SPEED_FASTER to R.string.word_speed_faster
+                            ).forEach { (factor, labelRes) ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = context.resources.getString(labelRes),
+                                            color = if (wordSpeed == factor) {
+                                                Color.White
+                                            } else {
+                                                Color.White.copy(alpha = 0.6f)
+                                            }
+                                        )
+                                    },
+                                    onClick = {
+                                        wordSpeed = factor
+                                        writeWordSpeed(context, factor)
+                                    }
+                                )
+                            }
+
                             DropdownMenuItem(
                                 text = {
                                     Text(
@@ -799,6 +874,8 @@ private fun SyncedLyricsLine(
     positionShiftMs: Long,
     startTimeMs: Long,
     endTimeMs: Long,
+    wordTimes: List<LyricsWord>?,
+    wordSpeedFactor: Float,
     karaokeEnabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -824,7 +901,7 @@ private fun SyncedLyricsLine(
         label = "lyrics-line-blur"
     )
     val lineScale by animateFloatAsState(
-        targetValue = if (isActive) 1.04f else 1f,
+        targetValue = if (isActive) ACTIVE_LINE_SCALE else 1f,
         animationSpec = spring(
             dampingRatio = 0.8f,
             stiffness = Spring.StiffnessMediumLow
@@ -855,14 +932,22 @@ private fun SyncedLyricsLine(
         shadow = lyricsShadow()
     )
 
-    val karaokeText by remember(text, startTimeMs, endTimeMs, karaoke) {
+    val karaokePlan = remember(text, startTimeMs, endTimeMs, wordSpeedFactor, wordTimes) {
+        buildKaraokePlan(
+            text = text,
+            startTimeMs = startTimeMs,
+            endTimeMs = endTimeMs,
+            wordSpeedFactor = wordSpeedFactor,
+            wordTimes = wordTimes
+        )
+    }
+    val karaokeText by remember(text, karaokePlan, karaoke) {
         derivedStateOf {
             if (karaoke) {
                 buildKaraokeText(
                     text = text,
                     positionMs = livePosition.value + positionShiftMs,
-                    startTimeMs = startTimeMs,
-                    endTimeMs = endTimeMs
+                    plan = karaokePlan
                 )
             } else {
                 null
@@ -875,7 +960,6 @@ private fun SyncedLyricsLine(
         style = lineStyle,
         color = Color.White.copy(alpha = if (karaoke) 1f else lineAlpha),
         modifier = modifier
-            .clip(RoundedCornerShape(10.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -895,12 +979,20 @@ private const val KARAOKE_FADE_MS = 300f
 private const val KARAOKE_MIN_WORD_MS = 120L
 private const val KARAOKE_DIM_ALPHA = 0.40f
 
-private fun buildKaraokeText(
+private val STRETCHED_VOWEL_REGEX = Regex("""([aeiouy])\1{2,}""")
+
+private class KaraokePlan(
+    val words: List<IntRange>,
+    val starts: List<Long>
+)
+
+private fun buildKaraokePlan(
     text: String,
-    positionMs: Long,
     startTimeMs: Long,
-    endTimeMs: Long
-): AnnotatedString {
+    endTimeMs: Long,
+    wordSpeedFactor: Float,
+    wordTimes: List<LyricsWord>?
+): KaraokePlan {
     val words = mutableListOf<IntRange>()
     var index = 0
     while (index < text.length) {
@@ -916,20 +1008,67 @@ private fun buildKaraokeText(
     }
 
     if (words.isEmpty()) {
+        return KaraokePlan(emptyList(), emptyList())
+    }
+
+    val lineDuration = (endTimeMs - startTimeMs).coerceAtLeast(1L)
+    val latestStart = (startTimeMs + lineDuration - KARAOKE_FADE_MS.toLong())
+        .coerceAtLeast(startTimeMs)
+
+    val realStarts = wordTimes
+        ?.takeIf { it.size == words.size }
+        ?.takeIf { stored ->
+            stored.withIndex().all { (wordIndex, word) ->
+                normalizeKaraokeWord(
+                    text.substring(words[wordIndex].first, words[wordIndex].last + 1)
+                ) == normalizeKaraokeWord(word.text)
+            }
+        }
+        ?.map { it.startMs.coerceIn(startTimeMs, latestStart) }
+        ?.sorted()
+
+    if (realStarts != null) {
+        return KaraokePlan(words, realStarts)
+    }
+
+    val syllables = words.map {
+        estimateSyllables(text.substring(it.first, it.last + 1))
+    }
+    val totalSyllables = syllables.sum().coerceAtLeast(1)
+    val pauses = words.map {
+        pauseAfterWord(text.substring(it.first, it.last + 1))
+    }
+    val totalPause = pauses.sum()
+
+    val available = (lineDuration - KARAOKE_FADE_MS.toLong() - totalPause)
+        .coerceAtLeast(0L)
+    val starts = ArrayList<Long>(words.size)
+    var cursor = startTimeMs
+
+    words.indices.forEach { wordIndex ->
+        starts.add(cursor.coerceAtMost(latestStart))
+
+        val base = available * syllables[wordIndex] / totalSyllables
+        val scaled = (base * wordSpeedFactor).toLong().coerceAtLeast(KARAOKE_MIN_WORD_MS)
+        cursor += scaled + pauses[wordIndex]
+    }
+
+    return KaraokePlan(words, starts)
+}
+
+private fun buildKaraokeText(
+    text: String,
+    positionMs: Long,
+    plan: KaraokePlan
+): AnnotatedString {
+    if (plan.words.isEmpty()) {
         return AnnotatedString(text)
     }
 
-    val totalChars = words.sumOf { it.last - it.first + 1 }.coerceAtLeast(1)
-    val lineDuration = (endTimeMs - startTimeMs).coerceAtLeast(1L)
-
     val builder = AnnotatedString.Builder(text)
-    var cursor = startTimeMs
 
-    words.forEach { range ->
-        val chars = range.last - range.first + 1
-        val nominal = lineDuration * chars / totalChars
-        val wordDuration = nominal.coerceAtLeast(KARAOKE_MIN_WORD_MS)
-        val wordStart = cursor
+    plan.words.forEachIndexed { index, range ->
+        val wordStart = plan.starts.getOrElse(index) { Long.MAX_VALUE }
 
         val progress = ((positionMs - wordStart).toFloat() / KARAOKE_FADE_MS)
             .coerceIn(0f, 1f)
@@ -955,11 +1094,78 @@ private fun buildKaraokeText(
             start = range.first,
             end = range.last + 1
         )
-
-        cursor += wordDuration
     }
 
     return builder.toAnnotatedString()
+}
+
+private fun normalizeKaraokeWord(word: String): String {
+    return word.lowercase().trim { !it.isLetterOrDigit() }
+}
+
+private fun estimateSyllables(raw: String): Int {
+    val letters = raw.lowercase().filter { it.isLetter() }
+    if (letters.isEmpty()) return 1
+
+    // Non-Latin scripts (Arabic, Japanese, Korean, ...) have no usable vowel
+    // groups here, so fall back to one unit per character.
+    if (letters.none { it in 'a'..'z' }) {
+        return letters.length.coerceAtLeast(1)
+    }
+
+    // Stretched words ("ooooh", "yeaaah", "noooo") are held for about three beats.
+    if (STRETCHED_VOWEL_REGEX.containsMatchIn(letters)) {
+        return 3
+    }
+
+    var count = 0
+    var previousVowel = false
+    for (letter in letters) {
+        val vowel = letter in "aeiouy"
+        if (vowel && !previousVowel) {
+            count++
+        }
+        previousVowel = vowel
+    }
+
+    // A trailing silent "e" does not add a syllable ("make", "the").
+    if (letters.length > 2 && letters.last() == 'e') {
+        val before = letters[letters.length - 2]
+        if (before !in "aeiouy") {
+            count--
+        }
+    }
+
+    // "-ed" is only its own syllable after t/d ("wanted", "needed").
+    if (letters.length > 3 && letters.endsWith("ed")) {
+        val before = letters[letters.length - 3]
+        if (before !in "aeiouy" && before != 't' && before != 'd') {
+            count--
+        }
+    }
+
+    // "-es" is only its own syllable after s/x/z/ch/sh ("boxes", "wishes").
+    if (letters.length > 3 && letters.endsWith("es")) {
+        val stem = letters.dropLast(2)
+        val keepsSyllable = stem.endsWith("s") || stem.endsWith("x") ||
+            stem.endsWith("z") || stem.endsWith("ch") || stem.endsWith("sh")
+        if (!keepsSyllable) {
+            count--
+        }
+    }
+
+    return count.coerceAtLeast(1)
+}
+
+private fun pauseAfterWord(raw: String): Long {
+    val word = raw.trimEnd()
+    return when {
+        word.endsWith("...") || word.endsWith("…") || word.endsWith(".") -> 200L
+        word.endsWith(",") || word.endsWith("-") || word.endsWith("–") ||
+            word.endsWith("—") -> 120L
+
+        else -> 0L
+    }
 }
 
 @Composable

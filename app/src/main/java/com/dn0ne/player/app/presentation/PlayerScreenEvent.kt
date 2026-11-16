@@ -54,7 +54,10 @@ sealed interface PlayerScreenEvent {
         val order: SortOrder? = null
     ): PlayerScreenEvent
 
-    data class OnCreatePlaylistClick(val name: String): PlayerScreenEvent
+    data class OnCreatePlaylistClick(
+        val name: String,
+        val tracks: List<Track> = emptyList()
+    ): PlayerScreenEvent
     data class OnRenamePlaylistClick(val name: String, val playlist: Playlist): PlayerScreenEvent
     data class OnDeletePlaylistClick(val playlist: Playlist): PlayerScreenEvent
     data class OnAddToPlaylist(val tracks: List<Track>, val playlist: Playlist): PlayerScreenEvent
