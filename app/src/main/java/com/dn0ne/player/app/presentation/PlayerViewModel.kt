@@ -13,6 +13,7 @@ import androidx.media3.common.Player
 import com.dn0ne.player.EqualizerController
 import com.dn0ne.player.R
 import com.dn0ne.player.app.data.LyricsReader
+import com.dn0ne.player.app.data.PlaylistCoverStore
 import com.dn0ne.player.app.data.SavedPlayerState
 import com.dn0ne.player.app.data.remote.lyrics.LyricsProvider
 import com.dn0ne.player.app.data.remote.metadata.MetadataProvider
@@ -32,8 +33,10 @@ import com.dn0ne.player.app.domain.track.Track
 import com.dn0ne.player.app.domain.track.format
 import com.dn0ne.player.app.domain.track.hasMissingAlbum
 import com.dn0ne.player.app.presentation.PlayerScreenEvent.*
+import com.dn0ne.player.app.presentation.components.background.PaletteProvider
 import com.dn0ne.player.app.presentation.components.playback.PlaybackState
 import com.dn0ne.player.app.presentation.components.settings.SettingsSheetState
+import com.dn0ne.player.app.presentation.components.snackbar.SnackbarAction
 import com.dn0ne.player.app.presentation.components.snackbar.SnackbarController
 import com.dn0ne.player.app.presentation.components.snackbar.SnackbarEvent
 import com.dn0ne.player.app.presentation.components.trackinfo.BulkTagFixState
@@ -55,6 +58,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
@@ -70,13 +74,20 @@ class PlayerViewModel(
     private val lyricsRepository: LyricsRepository,
     private val lyricsReader: LyricsReader,
     private val playlistRepository: PlaylistRepository,
+    private val playlistCoverStore: PlaylistCoverStore,
     private val listeningHistoryRepository: ListeningHistoryRepository,
     private val unsupportedArtworkEditFormats: List<String>,
     val settings: Settings,
     private val musicScanner: MusicScanner,
-    private val equalizerController: EqualizerController
+    private val equalizerController: EqualizerController,
+    private val paletteProvider: PaletteProvider
 ) : ViewModel() {
     var player: Player? = null
+
+    val backgroundPalette get() = paletteProvider.palette
+
+    val lastPlayedTrackUri: String?
+        get() = savedPlayerState.track?.uri?.toString()
 
     private val _settingsSheetState = MutableStateFlow(
         SettingsSheetState(
@@ -259,6 +270,28 @@ class PlayerViewModel(
     private val _pendingTrackUris = Channel<Uri>()
 
     init {
+        // Start from the last saved track so a cold launch already has colours.
+        val savedTrack = savedPlayerState.track
+        paletteProvider.setCurrentTrack(savedTrack)
+
+        // The provider follows the player itself, not a screen: notifications,
+        // headphones and auto-advance all update the palette while Now Playing is closed.
+        viewModelScope.launch {
+            var hasSeenTrack = savedTrack != null
+            _playbackState
+                .map { it.currentTrack }
+                .distinctUntilChanged()
+                .collectLatest { track ->
+                    // The initial empty playback state must not cancel the saved
+                    // track's extraction before the player has restored its queue.
+                    if (track == null && !hasSeenTrack) return@collectLatest
+
+                    hasSeenTrack = true
+                    paletteProvider.setCurrentTrack(track)
+                    paletteProvider.preload(nextQueueTrack())
+                }
+        }
+
         viewModelScope.launch(Dispatchers.IO) {
             while (true) {
                 val tracks = trackRepository.getTracks()
@@ -393,6 +426,16 @@ class PlayerViewModel(
                 }
             }
         }
+    }
+
+    private fun nextQueueTrack(): Track? {
+        val player = player ?: return null
+        val index = player.currentMediaItemIndex
+        if (index < 0 || index + 1 >= player.mediaItemCount) return null
+
+        val mediaItem = player.getMediaItemAt(index + 1)
+        return _playbackState.value.playlist?.trackList
+            ?.fastFirstOrNull { it.mediaItem == mediaItem }
     }
 
     fun onEvent(event: PlayerScreenEvent) {
@@ -1189,12 +1232,80 @@ class PlayerViewModel(
             is OnCreatePlaylistClick -> {
                 viewModelScope.launch {
                     if (playlists.value.map { it.name }.contains(event.name)) return@launch
-                    playlistRepository.insertPlaylist(
-                        Playlist(
-                            name = event.name,
-                            trackList = event.tracks
-                        )
+
+                    var playlist = Playlist(
+                        name = event.name,
+                        trackList = event.tracks
                     )
+                    playlistRepository.insertPlaylist(playlist)
+
+                    event.coverUri?.let { coverUri ->
+                        val coverPath = playlistCoverStore.saveCover(
+                            playlistName = event.name,
+                            source = coverUri
+                        ) ?: return@let
+
+                        playlist = playlist.copy(coverPath = coverPath)
+                        playlistRepository.updatePlaylistCover(
+                            playlist = playlist,
+                            coverPath = coverPath
+                        )
+                    }
+                }
+            }
+
+            is OnSetPlaylistCoverClick -> {
+                viewModelScope.launch {
+                    val playlist = event.playlist
+                    val name = playlist.name ?: return@launch
+                    val previousCoverPath = playlists.value
+                        .firstOrNull { it.name == name }
+                        ?.coverPath
+                        ?: playlist.coverPath
+
+                    val coverPath = playlistCoverStore.saveCover(
+                        playlistName = name,
+                        source = event.coverUri
+                    ) ?: return@launch
+
+                    playlistRepository.updatePlaylistCover(
+                        playlist = playlist,
+                        coverPath = coverPath
+                    )
+
+                    if (previousCoverPath != coverPath) {
+                        playlistCoverStore.deleteCover(previousCoverPath)
+                    }
+
+                    _selectedPlaylist.update { selected ->
+                        if (selected?.name == playlist.name) {
+                            selected.copy(coverPath = coverPath)
+                        } else selected
+                    }
+                }
+            }
+
+            is OnRemovePlaylistCoverClick -> {
+                viewModelScope.launch {
+                    val playlist = event.playlist
+                    if (playlist.name == null) return@launch
+
+                    val coverPath = playlists.value
+                        .firstOrNull { it.name == playlist.name }
+                        ?.coverPath
+                        ?: playlist.coverPath
+
+                    playlistRepository.updatePlaylistCover(
+                        playlist = playlist,
+                        coverPath = null
+                    )
+                    playlistCoverStore.deleteCover(coverPath)
+
+                    _selectedPlaylist.update { selected ->
+                        if (selected?.name == playlist.name) {
+                            selected.copy(coverPath = null)
+                        } else selected
+                    }
                 }
             }
 
@@ -1214,13 +1325,130 @@ class PlayerViewModel(
                 }
             }
 
-            is OnDeletePlaylistClick -> {
+            is OnDeletePlaylistsClick -> {
                 viewModelScope.launch {
-                    playlistRepository.deletePlaylist(
-                        playlist = event.playlist
-                    )
+                    val playlistsToDelete = event.playlists
+                    if (playlistsToDelete.isEmpty()) return@launch
 
-                    _selectedPlaylist.update { null }
+                    playlistsToDelete.forEach { playlist ->
+                        playlistCoverStore.deleteCover(playlist.coverPath)
+                        playlistRepository.deletePlaylist(playlist = playlist)
+                    }
+
+                    _selectedPlaylist.update { selected ->
+                        selected?.takeUnless { selectedPlaylist ->
+                            playlistsToDelete.any { it.name == selectedPlaylist.name }
+                        }
+                    }
+
+                    SnackbarController.sendEvent(
+                        SnackbarEvent(
+                            message = if (playlistsToDelete.size == 1) {
+                                R.string.playlist_deleted
+                            } else R.string.playlists_deleted,
+                            action = SnackbarAction(
+                                name = R.string.undo
+                            ) {
+                                viewModelScope.launch {
+                                    playlistsToDelete.forEach { playlist ->
+                                        playlistRepository.insertPlaylist(playlist)
+                                    }
+                                }
+                            },
+                            durationMillis = 5000L
+                        )
+                    )
+                }
+            }
+
+            is OnTracksDeleted -> {
+                viewModelScope.launch {
+                    val deletedUris = event.tracks.map { it.uri }.toSet()
+                    if (deletedUris.isEmpty()) return@launch
+
+                    val playbackState = _playbackState.value
+                    val playbackPlaylist = playbackState.playlist
+                    val oldTrackList = playbackPlaylist?.trackList ?: emptyList()
+                    val currentTrack = playbackState.currentTrack
+                    val currentWasDeleted = currentTrack?.let { it.uri in deletedUris } == true
+                    val currentIndex = oldTrackList.indexOfFirst { it.uri == currentTrack?.uri }
+                    val nextTrack = if (currentWasDeleted) {
+                        oldTrackList
+                            .drop(currentIndex + 1)
+                            .firstOrNull { it.uri !in deletedUris }
+                    } else null
+                    val remainingTracks = oldTrackList.filterNot { it.uri in deletedUris }
+                    val newCurrentTrack = when {
+                        currentWasDeleted -> nextTrack ?: remainingTracks.lastOrNull()
+                        else -> currentTrack
+                    }
+
+                    player?.let { player ->
+                        if (oldTrackList.isNotEmpty()) {
+                            if (currentWasDeleted && nextTrack != null) {
+                                val nextIndex = oldTrackList.indexOf(nextTrack)
+                                if (nextIndex in 0 until player.mediaItemCount) {
+                                    player.seekTo(nextIndex, 0L)
+                                }
+                            } else if (currentWasDeleted) {
+                                player.pause()
+                            }
+
+                            for (index in player.mediaItemCount - 1 downTo 0) {
+                                val mediaUri = player.getMediaItemAt(index)
+                                    .localConfiguration
+                                    ?.uri
+                                if (mediaUri != null && mediaUri in deletedUris) {
+                                    player.removeMediaItem(index)
+                                }
+                            }
+
+                            if (remainingTracks.isEmpty()) {
+                                player.clearMediaItems()
+                            }
+                        }
+                    }
+
+                    val updatedPlaylist = playbackPlaylist?.copy(trackList = remainingTracks)
+                    _playbackState.update {
+                        it.copy(
+                            playlist = updatedPlaylist,
+                            currentTrack = newCurrentTrack,
+                            isPlaying = if (remainingTracks.isEmpty()) false else it.isPlaying
+                        )
+                    }
+
+                    _trackList.update { tracks ->
+                        tracks.filterNot { it.uri in deletedUris }
+                    }
+
+                    _selectedPlaylist.update { selected ->
+                        selected?.copy(
+                            trackList = selected.trackList.filterNot { it.uri in deletedUris }
+                        )
+                    }
+
+                    playlists.value.forEach { playlist ->
+                        if (playlist.trackList.any { it.uri in deletedUris }) {
+                            playlistRepository.updatePlaylistTrackList(
+                                playlist = playlist,
+                                trackList = playlist.trackList.filterNot { it.uri in deletedUris }
+                            )
+                        }
+                    }
+
+                    withContext(Dispatchers.IO) {
+                        savedPlayerState.playlist = updatedPlaylist
+                        savedPlayerState.track = newCurrentTrack
+                    }
+
+                    musicScanner.refreshMedia(showMessages = false)
+
+                    SnackbarController.sendEvent(
+                        SnackbarEvent(
+                            message = R.string.deleted
+                        )
+                    )
                 }
             }
 

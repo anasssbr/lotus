@@ -20,8 +20,10 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ArrowBackIosNew
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.Search
+import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -33,6 +35,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -70,6 +73,7 @@ fun Queue(
     currentTrack: Track?,
     onRemoveFromQueueClick: (index: Int) -> Unit,
     onReorderingQueue: (from: Int, to: Int) -> Unit,
+    onDeleteTracksClick: (List<Track>) -> Unit,
     onTrackClick: (Track, Playlist) -> Unit,
     onBackClick: () -> Unit,
 ) {
@@ -81,15 +85,25 @@ fun Queue(
             mutableFloatStateOf(0f)
         }
 
-        BackHandler {
-            onBackClick()
-        }
-
         var searchFieldValue by rememberSaveable {
             mutableStateOf("")
         }
         var showSearchField by rememberSaveable {
             mutableStateOf(false)
+        }
+
+        var isInSelectionMode by remember {
+            mutableStateOf(false)
+        }
+        val selectedTracks = remember {
+            mutableStateListOf<Track>()
+        }
+
+        BackHandler {
+            if (isInSelectionMode) {
+                isInSelectionMode = false
+                selectedTracks.clear()
+            } else onBackClick()
         }
 
         var trackList by remember(playlist) {
@@ -147,6 +161,70 @@ fun Queue(
                         .padding(horizontal = if (collapseFraction > .2f) 28.dp else 108.dp)
                 )
 
+                if (isInSelectionMode) {
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(
+                                onClick = {
+                                    isInSelectionMode = false
+                                    selectedTracks.clear()
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Close,
+                                    contentDescription = context.resources.getString(R.string.back)
+                                )
+                            }
+
+                            Text(
+                                text = selectedTracks.size.toString(),
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                        }
+
+                        Row {
+                            val visibleTracks = trackList.filterTracks(searchFieldValue)
+
+                            if (selectedTracks.size < visibleTracks.size) {
+                                IconButton(
+                                    onClick = {
+                                        selectedTracks.clear()
+                                        selectedTracks.addAll(visibleTracks)
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.SelectAll,
+                                        contentDescription = context.resources.getString(
+                                            R.string.select_all
+                                        )
+                                    )
+                                }
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    onDeleteTracksClick(selectedTracks.toList())
+                                    isInSelectionMode = false
+                                    selectedTracks.clear()
+                                }
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Rounded.Delete,
+                                    contentDescription = context.resources.getString(
+                                        R.string.delete_from_device
+                                    ),
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        }
+                    }
+                } else {
                 AnimatedContent(
                     targetState = showSearchField,
                     label = "top-bar-search-bar-animation",
@@ -232,6 +310,7 @@ fun Queue(
                         }
                     }
                 }
+                }
             },
             collapseFraction = {
                 collapseFraction = it
@@ -265,12 +344,30 @@ fun Queue(
                     QueueItem(
                         track = track,
                         isCurrent = currentTrack == track,
+                        isSelectionMode = isInSelectionMode,
+                        isSelected = track in selectedTracks,
                         onClick = {
-                            playlist?.let {
-                                onTrackClick(
-                                    track,
-                                    playlist
-                                )
+                            if (isInSelectionMode) {
+                                if (track in selectedTracks) {
+                                    selectedTracks.remove(track)
+                                } else selectedTracks.add(track)
+
+                                if (selectedTracks.isEmpty()) {
+                                    isInSelectionMode = false
+                                }
+                            } else {
+                                playlist?.let {
+                                    onTrackClick(
+                                        track,
+                                        playlist
+                                    )
+                                }
+                            }
+                        },
+                        onLongClick = {
+                            isInSelectionMode = true
+                            if (track !in selectedTracks) {
+                                selectedTracks.add(track)
                             }
                         },
                         onRemoveFromQueueClick = {

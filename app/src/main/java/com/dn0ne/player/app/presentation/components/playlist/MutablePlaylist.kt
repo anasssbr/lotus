@@ -27,6 +27,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.DragHandle
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.FilterList
+import androidx.compose.material.icons.rounded.PlaylistRemove
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material3.Icon
@@ -79,6 +80,7 @@ fun MutablePlaylist(
     listState: LazyListState = rememberLazyListState(),
     playlist: Playlist,
     currentTrack: Track?,
+    isPlaying: Boolean = false,
     onRenamePlaylistClick: () -> Unit,
     onDeletePlaylistClick: () -> Unit,
     onTrackClick: (Track, Playlist) -> Unit,
@@ -89,6 +91,7 @@ fun MutablePlaylist(
     onViewTrackInfoClick: (Track) -> Unit,
     onGoToAlbumClick: (Track) -> Unit,
     onGoToArtistClick: (Track) -> Unit,
+    onDeleteTracksClick: (List<Track>) -> Unit,
     onTrackListReorder: (List<Track>) -> Unit,
     onBackClick: () -> Unit,
     replaceSearchWithFilter: Boolean
@@ -371,7 +374,7 @@ fun MutablePlaylist(
                                     }
                                 ) {
                                     Icon(
-                                        imageVector = Icons.Rounded.Delete,
+                                        imageVector = Icons.Rounded.PlaylistRemove,
                                         contentDescription = context.resources.getString(R.string.remove_from_playlist)
                                     )
                                 }
@@ -388,6 +391,22 @@ fun MutablePlaylist(
                                         contentDescription = context.resources.getString(
                                             R.string.track_search
                                         )
+                                    )
+                                }
+
+                                IconButton(
+                                    onClick = {
+                                        onDeleteTracksClick(selectedTracks.toList())
+                                        isInSelectionMode = false
+                                        selectedTracks.clear()
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Delete,
+                                        contentDescription = context.resources.getString(
+                                            R.string.delete_from_device
+                                        ),
+                                        tint = MaterialTheme.colorScheme.error
                                     )
                                 }
                             }
@@ -434,6 +453,7 @@ fun MutablePlaylist(
                     TrackListItem(
                         track = track,
                         isCurrent = currentTrack == track,
+                        isPlaying = isPlaying,
                         onClick = {
                             onTrackClick(
                                 track,
@@ -448,6 +468,7 @@ fun MutablePlaylist(
                         onAddToQueueClick = { onAddToQueueClick(listOf(track)) },
                         onAddToPlaylistClick = { onAddToPlaylistClick(listOf(track)) },
                         onRemoveFromPlaylistClick = { onRemoveFromPlaylistClick(listOf(track)) },
+                        onDeleteFromDeviceClick = { onDeleteTracksClick(listOf(track)) },
                         onViewTrackInfoClick = { onViewTrackInfoClick(track) },
                         onGoToAlbumClick = { onGoToAlbumClick(track) },
                         onGoToArtistClick = { onGoToArtistClick(track) },

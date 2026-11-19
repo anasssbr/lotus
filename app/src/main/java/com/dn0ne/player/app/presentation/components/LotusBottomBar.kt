@@ -1,6 +1,5 @@
 package com.dn0ne.player.app.presentation.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -21,6 +20,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -36,20 +37,17 @@ fun LotusBottomBar(
     selectedTab: TopLevelTab,
     onHomeClick: () -> Unit,
     onLibraryClick: () -> Unit,
+    backgroundColor: Color = MaterialTheme.colorScheme.background,
+    backgroundColorProvider: (() -> Color)? = null,
     modifier: Modifier = Modifier
 ) {
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
+            .drawBehind {
+                drawRect(color = backgroundColorProvider?.invoke() ?: backgroundColor)
+            }
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(1.dp)
-                .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.10f))
-        )
-
         Row(
             modifier = Modifier
                 .fillMaxWidth()

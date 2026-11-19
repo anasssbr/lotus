@@ -24,7 +24,8 @@ import coil3.toBitmap
 fun CoverArt(
     uri: Uri,
     onCoverArtLoaded: (ImageBitmap?) -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    cacheKey: String? = null
 ) {
     Box(
         modifier = modifier
@@ -44,6 +45,12 @@ fun CoverArt(
         AsyncImage(
             model = ImageRequest.Builder(context)
                 .data(uri)
+                .apply {
+                    if (cacheKey != null) {
+                        memoryCacheKey(cacheKey)
+                        diskCacheKey(cacheKey)
+                    }
+                }
                 .build(),
             onSuccess = {
                 onCoverArtLoaded(it.result.image.toBitmap().asImageBitmap())

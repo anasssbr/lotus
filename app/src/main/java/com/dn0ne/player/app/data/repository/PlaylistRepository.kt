@@ -9,5 +9,6 @@ interface PlaylistRepository {
     suspend fun insertPlaylist(playlist: Playlist)
     suspend fun updatePlaylistTrackList(playlist: Playlist, trackList: List<Track>)
     suspend fun renamePlaylist(playlist: Playlist, name: String)
+    suspend fun updatePlaylistCover(playlist: Playlist, coverPath: String?)
     suspend fun deletePlaylist(playlist: Playlist)
 }

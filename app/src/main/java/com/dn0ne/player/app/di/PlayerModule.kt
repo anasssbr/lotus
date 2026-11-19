@@ -6,6 +6,7 @@ import com.dn0ne.player.app.data.LyricsReader
 import com.dn0ne.player.app.data.LyricsReaderImpl
 import com.dn0ne.player.app.data.MetadataWriter
 import com.dn0ne.player.app.data.MetadataWriterImpl
+import com.dn0ne.player.app.data.PlaylistCoverStore
 import com.dn0ne.player.app.data.SavedPlayerState
 import com.dn0ne.player.app.data.notification.DownloadNotifications
 import com.dn0ne.player.app.data.remote.download.OnlineMusicProvider
@@ -28,6 +29,7 @@ import com.dn0ne.player.app.data.repository.TrackRepository
 import com.dn0ne.player.app.data.repository.TrackRepositoryImpl
 import com.dn0ne.player.app.presentation.DownloadViewModel
 import com.dn0ne.player.app.presentation.PlayerViewModel
+import com.dn0ne.player.app.presentation.components.background.PaletteProvider
 import com.dn0ne.player.app.presentation.home.DailyMixStore
 import com.dn0ne.player.app.presentation.home.HomeViewModel
 import io.ktor.client.HttpClient
@@ -167,6 +169,18 @@ val playerModule = module {
         )
     }
 
+    single {
+        PlaylistCoverStore(
+            context = androidContext()
+        )
+    }
+
+    single {
+        PaletteProvider(
+            context = androidContext()
+        )
+    }
+
     viewModel<HomeViewModel> {
         HomeViewModel(
             listeningHistoryRepository = get(),
@@ -183,11 +197,13 @@ val playerModule = module {
             lyricsRepository = get(),
             lyricsReader = get(),
             playlistRepository = get(),
+            playlistCoverStore = get(),
             listeningHistoryRepository = get(),
             unsupportedArtworkEditFormats = get<MetadataWriter>().unsupportedArtworkEditFormats,
             settings = get(),
             musicScanner = get(),
-            equalizerController = get()
+            equalizerController = get(),
+            paletteProvider = get()
         )
     }
 }

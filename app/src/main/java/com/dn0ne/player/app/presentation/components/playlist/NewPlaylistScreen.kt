@@ -1,5 +1,8 @@
 package com.dn0ne.player.app.presentation.components.playlist
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
 import android.net.Uri
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
@@ -53,7 +56,6 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
-import androidx.compose.material.icons.rounded.Casino
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.MusicNote
@@ -150,10 +152,32 @@ private val QuickStart.labelRes: Int
  * A palette of four vivid colors derived from a random base hue.
  * Never persisted: a fresh one is generated every time the screen opens.
  */
-private data class GradientPalette(val colors: List<Color>) {
+private data class GradientPalette(
+    val baseHue: Float,
+    val colors: List<Color>
+) {
     companion object {
-        fun random(random: Random = Random.Default): GradientPalette {
-            val baseHue = random.nextFloat() * 360f
+        fun random(
+            previousBaseHue: Float? = null,
+            random: Random = Random.Default
+        ): GradientPalette {
+            var baseHue = random.nextFloat() * 360f
+
+            if (previousBaseHue != null) {
+                var attempts = 0
+                while (
+                    angularDistance(baseHue, previousBaseHue) < 40f &&
+                    attempts < 40
+                ) {
+                    baseHue = random.nextFloat() * 360f
+                    attempts++
+                }
+
+                if (angularDistance(baseHue, previousBaseHue) < 40f) {
+                    baseHue = (previousBaseHue + 40f + random.nextFloat() * 280f) % 360f
+                }
+            }
+
             val thirdOffset = if (random.nextBoolean()) 150f else 180f
             val offsets = floatArrayOf(0f, 35f, thirdOffset, 260f)
 
@@ -174,9 +198,55 @@ private data class GradientPalette(val colors: List<Color>) {
                 )
             }
 
-            return GradientPalette(colors)
+            return GradientPalette(baseHue = baseHue, colors = colors)
+        }
+
+        private fun angularDistance(first: Float, second: Float): Float {
+            val delta = kotlin.math.abs(first - second) % 360f
+            return kotlin.math.min(delta, 360f - delta)
         }
     }
+}
+
+/**
+ * Keeps the current screen's palette alive across configuration changes only.
+ * The random seed is generated on every open; this holder never survives a close.
+ */
+private object NewPlaylistPaletteMemory {
+    var lastBaseHue: Float? = null
+    var activePalette: GradientPalette? = null
+}
+
+@Composable
+private fun rememberFreshPlaylistPalette(): GradientPalette {
+    val context = LocalContext.current
+    val activity = remember(context) {
+        context.findActivity()
+    }
+    val palette = remember {
+        NewPlaylistPaletteMemory.activePalette ?: GradientPalette.random(
+            previousBaseHue = NewPlaylistPaletteMemory.lastBaseHue
+        ).also {
+            NewPlaylistPaletteMemory.lastBaseHue = it.baseHue
+            NewPlaylistPaletteMemory.activePalette = it
+        }
+    }
+
+    DisposableEffect(activity) {
+        onDispose {
+            if (activity?.isChangingConfigurations != true) {
+                NewPlaylistPaletteMemory.activePalette = null
+            }
+        }
+    }
+
+    return palette
+}
+
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 private data class Blob(
@@ -201,7 +271,7 @@ fun NewPlaylistScreen(
     currentQueue: List<Track>,
     playlists: List<Playlist>,
     onLoadMostPlayed: suspend () -> List<Track>,
-    onCreate: (String, List<Track>) -> Unit,
+    onCreate: (String, List<Track>, Uri?) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -243,9 +313,7 @@ fun NewPlaylistScreen(
     }
     val animate = isResumed && !reduceMotion
 
-    var palette by remember {
-        mutableStateOf(GradientPalette.random())
-    }
+    val palette = rememberFreshPlaylistPalette()
     var title by rememberSaveable {
         mutableStateOf("")
     }
@@ -352,7 +420,7 @@ fun NewPlaylistScreen(
         scope.launch {
             createScale.animateTo(targetValue = 0.94f, animationSpec = tween(70))
             createScale.animateTo(targetValue = 1f, animationSpec = tween(130))
-            onCreate(trimmedTitle, selectedTracks.toList())
+            onCreate(trimmedTitle, selectedTracks.toList(), customCover)
         }
     }
 
@@ -432,15 +500,6 @@ fun NewPlaylistScreen(
                             },
                             onRemoveCustomCover = { customCover = null },
                             modifier = Modifier.fillMaxWidth(0.5f)
-                        )
-
-                        Spacer(modifier = Modifier.width(14.dp))
-
-                        DiceButton(
-                            onClick = {
-                                palette = GradientPalette.random()
-                                haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            }
                         )
                     }
                 }
@@ -916,32 +975,6 @@ private fun GradientCover(
             tint = Color.White.copy(alpha = 0.42f),
             modifier = Modifier.fillMaxSize(0.28f)
         )
-    }
-}
-
-@Composable
-private fun DiceButton(
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier
-) {
-    Surface(
-        onClick = onClick,
-        shape = CircleShape,
-        color = Color.Black.copy(alpha = 0.38f),
-        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.18f)),
-        modifier = modifier.size(46.dp)
-    ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(
-                imageVector = Icons.Rounded.Casino,
-                contentDescription = stringResource(R.string.reroll_colors),
-                tint = Color.White.copy(alpha = 0.92f),
-                modifier = Modifier.size(22.dp)
-            )
-        }
     }
 }
 

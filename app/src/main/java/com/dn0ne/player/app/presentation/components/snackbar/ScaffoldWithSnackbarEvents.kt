@@ -3,6 +3,7 @@ package com.dn0ne.player.app.presentation.components.snackbar
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -11,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
@@ -28,10 +30,22 @@ fun ScaffoldWithSnackbarEvents(
         coroutineScope.launch {
             snackbarHostState.currentSnackbarData?.dismiss()
 
+            val timeoutJob = event.durationMillis?.let { durationMillis ->
+                launch {
+                    delay(durationMillis)
+                    snackbarHostState.currentSnackbarData?.dismiss()
+                }
+            }
+
             val result = snackbarHostState.showSnackbar(
                 message = context.resources.getString(event.message),
-                actionLabel = event.action?.let { context.resources.getString(it.name) }
+                actionLabel = event.action?.let { context.resources.getString(it.name) },
+                duration = if (event.durationMillis != null) {
+                    SnackbarDuration.Indefinite
+                } else SnackbarDuration.Short
             )
+
+            timeoutJob?.cancel()
 
             if (result == SnackbarResult.ActionPerformed) {
                 event.action?.action?.invoke()

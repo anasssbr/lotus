@@ -26,6 +26,7 @@ import androidx.compose.material.icons.rounded.ArrowBackIosNew
 import androidx.compose.material.icons.rounded.AutoAwesome
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.Gradient
 import androidx.compose.material.icons.rounded.LightMode
 import androidx.compose.material.icons.rounded.PhonelinkSetup
 import androidx.compose.material3.Icon
@@ -389,6 +390,20 @@ fun ThemeSettings(
             isChecked = useAlbumArtColor,
             onCheckedChange = {
                 settings.updateUseAlbumArtColor(it)
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp)
+        )
+
+        val dynamicBackground by settings.dynamicBackground.collectAsState()
+        SettingSwitch(
+            title = context.resources.getString(R.string.dynamic_background),
+            supportingText = context.resources.getString(R.string.dynamic_background_explain),
+            icon = Icons.Rounded.Gradient,
+            isChecked = dynamicBackground,
+            onCheckedChange = {
+                settings.updateDynamicBackground(it)
             },
             modifier = Modifier
                 .fillMaxWidth()

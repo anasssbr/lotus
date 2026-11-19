@@ -179,6 +179,7 @@ private fun formatOffset(offsetMs: Long): String {
 fun LyricsSheet(
     playbackStateFlow: StateFlow<PlaybackState>,
     lyricsTextStyle: TextStyle,
+    baseColor: Color,
     containerColor: Color,
     contentColor: Color,
     onBackClick: () -> Unit,
@@ -405,7 +406,9 @@ fun LyricsSheet(
 
     CompositionLocalProvider(LocalContentColor provides Color.White) {
         BoxWithConstraints(
-            modifier = modifier.fillMaxSize()
+            modifier = modifier
+                .fillMaxSize()
+                .background(baseColor)
         ) {
             val density = LocalDensity.current
             val widthPx = with(density) {
@@ -420,6 +423,7 @@ fun LyricsSheet(
                     track = currentTrack,
                     screenWidthPx = widthPx,
                     screenHeightPx = heightPx,
+                    baseColor = baseColor,
                     dim = 0.27f,
                     dimOnDarkArtwork = 0.15f,
                     modifier = Modifier.fillMaxSize()

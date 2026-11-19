@@ -5,5 +5,6 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class Playlist(
     val name: String?,
-    val trackList: List<Track>
+    val trackList: List<Track>,
+    val coverPath: String? = null
 )

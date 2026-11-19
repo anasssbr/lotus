@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,6 +34,7 @@ import com.dn0ne.player.app.domain.track.Track
 fun TrackListItem(
     track: Track,
     isCurrent: Boolean,
+    isPlaying: Boolean = false,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     onPlayNextClick: () -> Unit,
@@ -42,6 +44,7 @@ fun TrackListItem(
     onGoToAlbumClick: () -> Unit,
     onGoToArtistClick: () -> Unit,
     onRemoveFromPlaylistClick: (() -> Unit)? = null,
+    onDeleteFromDeviceClick: (() -> Unit)? = null,
     dragHandle: (@Composable () -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
@@ -54,7 +57,9 @@ fun TrackListItem(
                 onClick()
             }
             .background(
-                color = if (isCurrent) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent
+                color = if (isCurrent) {
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.10f)
+                } else Color.Transparent
             )
             .padding(vertical = 6.dp)
             .padding(start = if (dragHandle != null) 8.dp else 0.dp, end = if (dragHandle != null) 8.dp else 0.dp),
@@ -67,19 +72,37 @@ fun TrackListItem(
             verticalAlignment = Alignment.CenterVertically
         ) {
 
-            CoverArt(
-                uri = track.coverArtUri,
-                modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(14.dp))
-            )
+            Box {
+                CoverArt(
+                    uri = track.coverArtUri,
+                    modifier = Modifier
+                        .size(56.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                )
+
+                if (isCurrent) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.BottomEnd)
+                            .padding(4.dp)
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color.Black.copy(alpha = 0.55f))
+                            .padding(horizontal = 4.dp, vertical = 3.dp)
+                    ) {
+                        PlayingEqualizer(
+                            playing = isPlaying,
+                            modifier = Modifier.size(width = 13.dp, height = 9.dp)
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.width(16.dp))
 
             Column {
                 Text(
                     text = track.title ?: context.resources.getString(R.string.unknown_title),
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleMedium.copy(shadow = TitleShadow),
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -105,7 +128,8 @@ fun TrackListItem(
                 onViewTrackInfoClick = onViewTrackInfoClick,
                 onGoToAlbumClick = onGoToAlbumClick,
                 onGoToArtistClick = onGoToArtistClick,
-                onRemoveFromPlaylistClick = onRemoveFromPlaylistClick
+                onRemoveFromPlaylistClick = onRemoveFromPlaylistClick,
+                onDeleteFromDeviceClick = onDeleteFromDeviceClick
             )
 
             dragHandle?.invoke()

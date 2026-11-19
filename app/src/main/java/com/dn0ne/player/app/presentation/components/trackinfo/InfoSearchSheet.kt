@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.dp
 import com.dn0ne.player.R
 import com.dn0ne.player.app.domain.metadata.MetadataSearchResult
 import com.dn0ne.player.app.presentation.components.ProviderText
+import com.dn0ne.player.app.presentation.components.glassSurface
 
 @Composable
 fun InfoSearchSheet(
@@ -294,13 +295,21 @@ fun SearchField(
     onValueChange: (String) -> Unit,
     icon: ImageVector = Icons.Rounded.Search,
     placeholder: String = stringResource(R.string.search),
+    glass: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val shape = ShapeDefaults.ExtraLarge
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
-            .clip(ShapeDefaults.ExtraLarge)
-            .background(color = MaterialTheme.colorScheme.surfaceContainerHigh)
+            .clip(shape)
+            .then(
+                if (glass) {
+                    Modifier.glassSurface(shape)
+                } else {
+                    Modifier.background(color = MaterialTheme.colorScheme.surfaceContainerHigh)
+                }
+            )
             .padding(12.dp)
     ) {
         Icon(

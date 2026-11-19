@@ -93,6 +93,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -119,6 +124,7 @@ import com.dn0ne.player.app.domain.track.Playlist
 import com.dn0ne.player.app.domain.track.Track
 import com.dn0ne.player.app.presentation.components.CoverArt
 import com.dn0ne.player.app.presentation.components.TrackMenuButton
+import com.dn0ne.player.app.presentation.components.background.deepPaletteBase
 import com.dn0ne.player.app.presentation.components.isSystemInLandscapeOrientation
 import com.dn0ne.player.app.presentation.components.settings.Theme
 import com.dn0ne.player.core.data.Settings
@@ -148,6 +154,8 @@ fun PlayerSheet(
     onViewTrackInfoClick: () -> Unit,
     onGoToAlbumClick: () -> Unit,
     onGoToArtistClick: () -> Unit,
+    onDeleteFromDeviceClick: (Track) -> Unit,
+    onDeleteTracksClick: (List<Track>) -> Unit,
     onLyricsClick: () -> Unit,
     positionProvider: () -> Long,
     onRemoveFromQueueClick: (Int) -> Unit,
@@ -155,6 +163,7 @@ fun PlayerSheet(
     onTrackClick: (Track, Playlist) -> Unit,
     onSettingsClick: () -> Unit,
     settings: Settings,
+    dominantColor: Color? = null,
     showBottomBar: Boolean = false,
     modifier: Modifier = Modifier
 ) {
@@ -166,6 +175,9 @@ fun PlayerSheet(
     }
     val density = LocalDensity.current
     val coroutineScope = rememberCoroutineScope()
+    val baseColor = remember(dominantColor) {
+        deepPaletteBase(dominantColor)
+    }
     val thresholdY = with(density) { 200.dp.toPx() }
     val decay = rememberSplineBasedDecay<Float>()
     val translationY = remember {
@@ -254,7 +266,6 @@ fun PlayerSheet(
                     }
                 }
             )
-            .background(color = MaterialTheme.colorScheme.surfaceContainer)
 
     ) { state ->
         when (state) {
@@ -287,6 +298,7 @@ fun PlayerSheet(
 
                 ExpandedPlayer(
                     playbackStateFlow = playbackStateFlow,
+                    baseColor = baseColor,
                     onSeekTo = onSeekTo,
                     onPauseClick = onPauseClick,
                     onPlayClick = onPlayClick,
@@ -307,6 +319,8 @@ fun PlayerSheet(
                     onViewTrackInfoClick = onViewTrackInfoClick,
                     onGoToAlbumClick = onGoToAlbumClick,
                     onGoToArtistClick = onGoToArtistClick,
+                    onDeleteFromDeviceClick = onDeleteFromDeviceClick,
+                    onDeleteTracksClick = onDeleteTracksClick,
                     onLyricsSheetExpandedChange = onLyricsSheetExpandedChange,
                     onLyricsClick = onLyricsClick,
                     positionProvider = positionProvider,
@@ -385,11 +399,11 @@ fun BottomPlayer(
         animationSpec = tween(durationMillis = 1000, easing = LinearEasing),
         label = "bottom-player-progress"
     ).value
+    val accent = MaterialTheme.colorScheme.primary
 
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
             .then(
                 if (applyNavigationBarsPadding) Modifier.navigationBarsPadding() else Modifier
             )
@@ -401,13 +415,21 @@ fun BottomPlayer(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(2.dp)
-                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.20f))
+                .background(accent.copy(alpha = 0.18f))
         ) {
             Box(
                 modifier = Modifier
                     .fillMaxHeight()
                     .fillMaxWidth(progress)
-                    .background(color = MaterialTheme.colorScheme.primary)
+                    .drawBehind {
+                        drawRoundRect(
+                            color = accent.copy(alpha = 0.24f),
+                            topLeft = Offset(0f, -2.5.dp.toPx()),
+                            size = Size(size.width, size.height + 5.dp.toPx()),
+                            cornerRadius = CornerRadius(size.height)
+                        )
+                    }
+                    .background(color = accent)
             )
         }
 
@@ -510,6 +532,7 @@ fun BottomPlayer(
 @Composable
 fun ExpandedPlayer(
     playbackStateFlow: StateFlow<PlaybackState>,
+    baseColor: Color,
     onPlayClick: () -> Unit,
     onPauseClick: () -> Unit,
     onSeekToNextClick: () -> Unit,
@@ -524,6 +547,8 @@ fun ExpandedPlayer(
     onViewTrackInfoClick: () -> Unit,
     onGoToAlbumClick: () -> Unit,
     onGoToArtistClick: () -> Unit,
+    onDeleteFromDeviceClick: (Track) -> Unit,
+    onDeleteTracksClick: (List<Track>) -> Unit,
     onLyricsSheetExpandedChange: (Boolean) -> Unit,
     onLyricsClick: () -> Unit,
     positionProvider: () -> Long,
@@ -553,7 +578,11 @@ fun ExpandedPlayer(
         mutableStateOf(false)
     }
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .background(baseColor)
+    ) {
         val currentTrack by remember {
             derivedStateOf {
                 playbackState.currentTrack!!
@@ -697,7 +726,10 @@ fun ExpandedPlayer(
                                 onAddToPlaylistClick = onAddToPlaylistClick,
                                 onViewTrackInfoClick = onViewTrackInfoClick,
                                 onGoToAlbumClick = onGoToAlbumClick,
-                                onGoToArtistClick = onGoToArtistClick
+                                onGoToArtistClick = onGoToArtistClick,
+                                onDeleteFromDeviceClick = {
+                                    onDeleteFromDeviceClick(currentTrack)
+                                }
                             )
                         }
                     }
@@ -831,6 +863,7 @@ fun ExpandedPlayer(
                     screenWidthPx = screenWidthPx,
                     screenHeightPx = screenHeightPx,
                     expansionFraction = expansion,
+                    baseColor = baseColor,
                     onToggleExpanded = {
                         isArtworkExpanded = !isArtworkExpanded
                     },
@@ -928,6 +961,9 @@ fun ExpandedPlayer(
                                 onViewTrackInfoClick = onViewTrackInfoClick,
                                 onGoToAlbumClick = onGoToAlbumClick,
                                 onGoToArtistClick = onGoToArtistClick,
+                                onDeleteFromDeviceClick = {
+                                    onDeleteFromDeviceClick(currentTrack)
+                                },
                                 tint = Color.White
                             )
                         }
@@ -1162,6 +1198,7 @@ fun ExpandedPlayer(
             LyricsSheet(
                 playbackStateFlow = playbackStateFlow,
                 lyricsTextStyle = lyricsTextStyle,
+                baseColor = baseColor,
                 onBackClick = {
                     onLyricsSheetExpandedChange(false)
                 },
@@ -1199,6 +1236,7 @@ fun ExpandedPlayer(
                 currentTrack = currentTrack,
                 onRemoveFromQueueClick = onRemoveFromQueueClick,
                 onReorderingQueue = onReorderingQueue,
+                onDeleteTracksClick = onDeleteTracksClick,
                 onTrackClick = onTrackClick,
                 onBackClick = {
                     showQueue = false

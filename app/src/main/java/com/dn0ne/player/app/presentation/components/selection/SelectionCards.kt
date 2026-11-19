@@ -18,6 +18,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ShapeDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +32,8 @@ import com.dn0ne.player.app.domain.track.Playlist
 import com.dn0ne.player.app.presentation.components.CoverArt
 import com.dn0ne.player.app.presentation.components.playlist.FourArtsPreview
 import com.dn0ne.player.app.presentation.components.playlist.TrackCountBubble
+import com.dn0ne.player.app.presentation.components.playlist.playlistCoverCacheKey
+import com.dn0ne.player.app.presentation.components.playlist.playlistCoverUri
 import com.kmpalette.rememberDominantColorState
 import kotlinx.coroutines.launch
 
@@ -54,6 +57,7 @@ fun LazyGridScope.selectionCards(
             coverArtPreviewUris = playlist.trackList
                 .take(if (showSinglePreview) 1 else 4)
                 .map { it.coverArtUri },
+            coverPath = playlist.coverPath,
             isSelected = playlist in selectedPlaylists,
             modifier = Modifier
                 .clip(ShapeDefaults.Large)
@@ -71,18 +75,27 @@ fun SelectionCard(
     trackCount: Int,
     coverArtPreviewUris: List<Uri>,
     isSelected: Boolean,
+    coverPath: String? = null,
     modifier: Modifier = Modifier
 ) {
+    val customCoverUri = remember(coverPath) {
+        playlistCoverUri(coverPath)
+    }
+    val customCoverCacheKey = remember(coverPath) {
+        playlistCoverCacheKey(coverPath)
+    }
+
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box {
-            if (coverArtPreviewUris.size <= 1) {
+            if (customCoverUri != null || coverArtPreviewUris.size <= 1) {
                 val dominantColorState = rememberDominantColorState()
                 val coroutineScope = rememberCoroutineScope()
                 CoverArt(
-                    uri = coverArtPreviewUris.firstOrNull() ?: Uri.EMPTY,
+                    uri = customCoverUri ?: coverArtPreviewUris.firstOrNull() ?: Uri.EMPTY,
+                    cacheKey = customCoverCacheKey,
                     onCoverArtLoaded = { bitmap ->
                         bitmap?.let {
                             coroutineScope.launch {

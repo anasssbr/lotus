@@ -76,29 +76,34 @@ fun NowPlayingStage(
     screenWidthPx: Int,
     screenHeightPx: Int,
     expansionFraction: Float,
+    baseColor: Color,
     onToggleExpanded: () -> Unit,
     onCoverArtLoaded: (ImageBitmap?) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Crossfade(
-        targetState = track,
-        animationSpec = tween(durationMillis = 400),
-        label = "now-playing-crossfade",
-        modifier = modifier
-    ) { currentTrack ->
-        val artwork = rememberArtwork(
-            track = currentTrack,
-            screenWidthPx = screenWidthPx,
-            screenHeightPx = screenHeightPx,
-            onCoverArtLoaded = onCoverArtLoaded
-        )
-
-        StageLayer(
-            artwork = artwork,
-            expansionFraction = expansionFraction,
-            onToggleExpanded = onToggleExpanded,
+    // Opaque base under both crossfade layers, so a track change can never reveal the
+    // Home/Library screen behind the player while the new artwork is decoding.
+    Box(modifier = modifier.background(baseColor)) {
+        Crossfade(
+            targetState = track,
+            animationSpec = tween(durationMillis = 400),
+            label = "now-playing-crossfade",
             modifier = Modifier.fillMaxSize()
-        )
+        ) { currentTrack ->
+            val artwork = rememberArtwork(
+                track = currentTrack,
+                screenWidthPx = screenWidthPx,
+                screenHeightPx = screenHeightPx,
+                onCoverArtLoaded = onCoverArtLoaded
+            )
+
+            StageLayer(
+                artwork = artwork,
+                expansionFraction = expansionFraction,
+                onToggleExpanded = onToggleExpanded,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }
 
@@ -125,8 +130,10 @@ private fun rememberArtwork(
     }
 
     LaunchedEffect(key) {
-        val cached = ArtworkMemoryCache.get(key)
-        if (cached != null) {
+        if (ArtworkMemoryCache.has(key)) {
+            val cached = ArtworkMemoryCache.getExact(key)
+            bitmap = cached
+            lowRes = cached != null && cached.width < screenWidthPx * 0.8f
             onCoverArtLoaded(cached)
             return@LaunchedEffect
         }
@@ -153,14 +160,24 @@ private fun rememberArtwork(
 private object ArtworkMemoryCache {
     private var key: String? = null
     private var bitmap: ImageBitmap? = null
+    private var lastBitmap: ImageBitmap? = null
 
     fun get(key: String): ImageBitmap? {
-        return if (this.key == key) bitmap else null
+        val cached = if (this.key == key) bitmap else null
+        // Keep the previous cover visible until the new one finishes decoding.
+        return cached ?: lastBitmap
     }
+
+    fun has(key: String): Boolean = this.key == key
+
+    fun getExact(key: String): ImageBitmap? = if (this.key == key) bitmap else null
 
     fun put(key: String, value: ImageBitmap?) {
         this.key = key
         this.bitmap = value
+        if (value != null) {
+            lastBitmap = value
+        }
     }
 }
 
@@ -169,38 +186,41 @@ fun NowPlayingArtworkBackground(
     track: Track,
     screenWidthPx: Int,
     screenHeightPx: Int,
+    baseColor: Color,
     dim: Float = 0.27f,
     dimOnDarkArtwork: Float? = null,
     modifier: Modifier = Modifier
 ) {
-    Crossfade(
-        targetState = track,
-        animationSpec = tween(durationMillis = 400),
-        label = "artwork-background-crossfade",
-        modifier = modifier
-    ) { currentTrack ->
-        val artwork = rememberArtwork(
-            track = currentTrack,
-            screenWidthPx = screenWidthPx,
-            screenHeightPx = screenHeightPx
-        )
-
-        val luminance = remember(artwork.bitmap) {
-            artwork.bitmap?.let { averageLuminance(it) }
-        }
-        val effectiveDim = if (
-            dimOnDarkArtwork != null && luminance != null && luminance < 0.32f
-        ) {
-            dimOnDarkArtwork
-        } else {
-            dim
-        }
-
-        ArtworkBackground(
-            artwork = artwork,
-            dim = effectiveDim,
+    Box(modifier = modifier.background(baseColor)) {
+        Crossfade(
+            targetState = track,
+            animationSpec = tween(durationMillis = 400),
+            label = "artwork-background-crossfade",
             modifier = Modifier.fillMaxSize()
-        )
+        ) { currentTrack ->
+            val artwork = rememberArtwork(
+                track = currentTrack,
+                screenWidthPx = screenWidthPx,
+                screenHeightPx = screenHeightPx
+            )
+
+            val luminance = remember(artwork.bitmap) {
+                artwork.bitmap?.let { averageLuminance(it) }
+            }
+            val effectiveDim = if (
+                dimOnDarkArtwork != null && luminance != null && luminance < 0.32f
+            ) {
+                dimOnDarkArtwork
+            } else {
+                dim
+            }
+
+            ArtworkBackground(
+                artwork = artwork,
+                dim = effectiveDim,
+                modifier = Modifier.fillMaxSize()
+            )
+        }
     }
 }
 

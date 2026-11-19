@@ -13,11 +13,12 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ShapeDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,6 +30,8 @@ import com.dn0ne.player.app.domain.sort.sortedBy
 import com.dn0ne.player.app.domain.track.Playlist
 import com.dn0ne.player.app.presentation.components.CoverArt
 import com.dn0ne.player.app.presentation.components.NothingYet
+import com.dn0ne.player.app.presentation.components.rememberReduceMotion
+import com.dn0ne.player.app.presentation.components.staggeredFadeIn
 import com.kmpalette.rememberDominantColorState
 import kotlinx.coroutines.launch
 
@@ -52,10 +55,12 @@ fun LazyGridScope.playlistRows(
         }
     }
 
-    items(
+    itemsIndexed(
         items = playlists.sortedBy(sort, sortOrder),
-        key = { "${it.name}-${it.trackList}" }
-    ) { playlist ->
+        key = { _, playlist -> "${playlist.name}-${playlist.trackList}" }
+    ) { index, playlist ->
+        val reduceMotion = rememberReduceMotion()
+
         PlaylistRow(
             title = playlist.name
                 ?: fallbackPlaylistTitle,
@@ -63,7 +68,9 @@ fun LazyGridScope.playlistRows(
             coverArtPreviewUris = playlist.trackList
                 .take(if (showSinglePreview) 1 else 4)
                 .map { it.coverArtUri },
+            coverPath = playlist.coverPath,
             modifier = Modifier
+                .staggeredFadeIn(index = index, enabled = !reduceMotion)
                 .clip(ShapeDefaults.Medium)
                 .combinedClickable(
                     onLongClick = {
@@ -83,8 +90,16 @@ fun PlaylistRow(
     title: String,
     trackCount: Int,
     coverArtPreviewUris: List<Uri>,
+    coverPath: String? = null,
     modifier: Modifier = Modifier
 ) {
+    val customCoverUri = remember(coverPath) {
+        playlistCoverUri(coverPath)
+    }
+    val customCoverCacheKey = remember(coverPath) {
+        playlistCoverCacheKey(coverPath)
+    }
+
     Row(
         modifier = modifier,
         verticalAlignment = Alignment.CenterVertically,
@@ -99,9 +114,10 @@ fun PlaylistRow(
                 .padding(end = 16.dp)
         ) {
             Box {
-                if (coverArtPreviewUris.size <= 1) {
+                if (customCoverUri != null || coverArtPreviewUris.size <= 1) {
                     CoverArt(
-                        uri = coverArtPreviewUris.firstOrNull() ?: Uri.EMPTY,
+                        uri = customCoverUri ?: coverArtPreviewUris.firstOrNull() ?: Uri.EMPTY,
+                        cacheKey = customCoverCacheKey,
                         onCoverArtLoaded = { bitmap ->
                             bitmap?.let {
                                 coroutineScope.launch {

@@ -1,6 +1,12 @@
 package com.dn0ne.player.app.presentation
 
+import android.app.Activity
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -27,6 +33,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -40,9 +47,11 @@ import androidx.compose.material.icons.automirrored.rounded.ViewList
 import androidx.compose.material.icons.rounded.AddToQueue
 import androidx.compose.material.icons.rounded.AutoFixHigh
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Download
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.GridView
+import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.MyLocation
 import androidx.compose.material.icons.rounded.MusicNote
@@ -50,6 +59,8 @@ import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -67,6 +78,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -76,10 +88,13 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -92,6 +107,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.dn0ne.player.R
+import com.dn0ne.player.app.data.TrackDeleteFailure
+import com.dn0ne.player.app.data.TrackDeleteOutcome
+import com.dn0ne.player.app.data.TrackFileDeleter
 import com.dn0ne.player.app.domain.sort.PlaylistSort
 import com.dn0ne.player.app.domain.sort.SortOrder
 import com.dn0ne.player.app.domain.sort.TrackSort
@@ -104,10 +122,16 @@ import com.dn0ne.player.app.presentation.components.TrackSortButton
 import com.dn0ne.player.app.presentation.components.LotusBottomBar
 import com.dn0ne.player.app.presentation.components.TopLevelTab
 import com.dn0ne.player.app.presentation.components.download.DownloadScreen
+import com.dn0ne.player.app.presentation.components.background.DynamicBackground
+import com.dn0ne.player.app.presentation.components.background.DynamicScrimProfile
+import com.dn0ne.player.app.presentation.components.background.VerticalFadePaint
+import com.dn0ne.player.app.presentation.components.background.rememberDynamicBackgroundAnimationsEnabled
+import com.dn0ne.player.app.presentation.components.background.rememberDynamicBackgroundAnimator
 import com.dn0ne.player.app.presentation.components.playback.PlayerSheet
 import com.dn0ne.player.app.presentation.components.playlist.AddNewPlaylistRow
 import com.dn0ne.player.app.presentation.components.playlist.AddToOrCreatePlaylistBottomSheet
 import com.dn0ne.player.app.presentation.components.playlist.DeletePlaylistDialog
+import com.dn0ne.player.app.presentation.components.playlist.DeleteTracksDialog
 import com.dn0ne.player.app.presentation.components.playlist.MutablePlaylist
 import com.dn0ne.player.app.presentation.components.playlist.NewPlaylistScreen
 import com.dn0ne.player.app.presentation.components.playlist.Playlist
@@ -141,7 +165,9 @@ import com.kmpalette.rememberDominantColorState
 import com.materialkolor.DynamicMaterialTheme
 import com.materialkolor.PaletteStyle
 import com.materialkolor.ktx.toHct
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -175,6 +201,7 @@ fun PlayerScreen(
 ) {
     val useDynamicColor by viewModel.settings.useDynamicColor.collectAsState()
     val useAlbumArtColor by viewModel.settings.useAlbumArtColor.collectAsState()
+    val dynamicBackgroundEnabled by viewModel.settings.dynamicBackground.collectAsState()
     val dominantColorState = rememberDominantColorState()
     var coverArtBitmap by remember {
         mutableStateOf<ImageBitmap?>(null)
@@ -200,12 +227,14 @@ fun PlayerScreen(
         }
     }
 
-    LaunchedEffect(useAlbumArtColor, useDynamicColor) {
+    LaunchedEffect(useAlbumArtColor, useDynamicColor, dynamicBackgroundEnabled) {
         if (useAlbumArtColor) {
             coverArtBitmap?.let {
                 dominantColorState.updateFrom(it)
             }
-        } else dominantColorState.reset()
+        } else if (!dynamicBackgroundEnabled) {
+            dominantColorState.reset()
+        }
     }
 
     val appearance by viewModel.settings.appearance.collectAsState()
@@ -268,6 +297,96 @@ fun PlayerScreen(
                     .background(color = MaterialTheme.colorScheme.background)
             ) {
                 val context = LocalContext.current
+                val trackFileDeleter = remember(context) {
+                    TrackFileDeleter(context)
+                }
+                var playlistsPendingDelete by remember {
+                    mutableStateOf<List<Playlist>>(emptyList())
+                }
+                var tracksPendingDelete by remember {
+                    mutableStateOf<List<Track>>(emptyList())
+                }
+                var tracksQueuedForDeletion by remember {
+                    mutableStateOf<List<Track>>(emptyList())
+                }
+                var deleteRunToken by remember {
+                    mutableIntStateOf(0)
+                }
+                var deleteRequest by remember {
+                    mutableStateOf<IntentSenderRequest?>(null)
+                }
+                var deleteAwaitingSystem by remember {
+                    mutableStateOf(false)
+                }
+                val deleteLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.StartIntentSenderForResult()
+                ) { result ->
+                    if (result.resultCode == Activity.RESULT_OK) {
+                        if (deleteAwaitingSystem) {
+                            val deletedTracks = tracksQueuedForDeletion
+                            tracksQueuedForDeletion = emptyList()
+                            viewModel.onEvent(PlayerScreenEvent.OnTracksDeleted(deletedTracks))
+                        } else {
+                            deleteRunToken++
+                        }
+                    } else {
+                        tracksQueuedForDeletion = emptyList()
+                    }
+                }
+
+                LaunchedEffect(deleteRequest) {
+                    deleteRequest?.let { request ->
+                        deleteRequest = null
+                        deleteLauncher.launch(request)
+                    }
+                }
+
+                LaunchedEffect(deleteRunToken) {
+                    val tracks = tracksQueuedForDeletion
+                    if (tracks.isEmpty()) return@LaunchedEffect
+
+                    when (
+                        val outcome = withContext(Dispatchers.IO) {
+                            trackFileDeleter.delete(tracks)
+                        }
+                    ) {
+                        TrackDeleteOutcome.Deleted -> {
+                            tracksQueuedForDeletion = emptyList()
+                            viewModel.onEvent(PlayerScreenEvent.OnTracksDeleted(tracks))
+                        }
+
+                        is TrackDeleteOutcome.RequiresSystemConfirmation -> {
+                            deleteAwaitingSystem = true
+                            tracksQueuedForDeletion = outcome.tracks
+                            deleteRequest = IntentSenderRequest
+                                .Builder(outcome.intentSender)
+                                .build()
+                        }
+
+                        is TrackDeleteOutcome.RequiresPermission -> {
+                            deleteAwaitingSystem = false
+                            tracksQueuedForDeletion = outcome.tracks
+                            deleteRequest = IntentSenderRequest
+                                .Builder(outcome.intentSender)
+                                .build()
+                        }
+
+                        is TrackDeleteOutcome.Failed -> {
+                            tracksQueuedForDeletion = emptyList()
+                            SnackbarController.sendEvent(
+                                SnackbarEvent(
+                                    message = when (outcome.reason) {
+                                        TrackDeleteFailure.Permission ->
+                                            R.string.delete_failed_permission
+
+                                        TrackDeleteFailure.Unknown ->
+                                            R.string.delete_failed
+                                    }
+                                )
+                            )
+                        }
+                    }
+                }
                 val playbackState by viewModel.playbackState.collectAsState()
                 val currentTrack by remember {
                     derivedStateOf {
@@ -311,6 +430,37 @@ fun PlayerScreen(
                 val isHomeDestination = currentDestination?.hasRoute<PlayerRoutes.Home>() == true
                 val isLibraryDestination = currentDestination?.hasRoute<PlayerRoutes.Main>() == true
                 val showBottomBar = isHomeDestination || isLibraryDestination
+                val backgroundScrollOffset = remember {
+                    mutableFloatStateOf(0f)
+                }
+
+                val backgroundAnimationsEnabled =
+                    rememberDynamicBackgroundAnimationsEnabled()
+                val sharedPalette by viewModel.backgroundPalette.collectAsState()
+                val backgroundPaletteColor = sharedPalette?.primary
+                val backgroundAnimator = rememberDynamicBackgroundAnimator(
+                    palette = sharedPalette,
+                    enabled = dynamicBackgroundEnabled,
+                    animationsEnabled = backgroundAnimationsEnabled
+                )
+                val miniPlayerBackdrop = remember { VerticalFadePaint() }
+
+                if (showBottomBar) {
+                    DynamicBackground(
+                        palette = sharedPalette,
+                        animator = backgroundAnimator,
+                        enabled = dynamicBackgroundEnabled,
+                        animationsEnabled = backgroundAnimationsEnabled,
+                        isPlaying = playbackState.isPlaying,
+                        scrollOffset = backgroundScrollOffset,
+                        profile = if (isLibraryDestination) {
+                            DynamicScrimProfile.Library
+                        } else {
+                            DynamicScrimProfile.Home
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
 
                 var showScrollToTopButton by remember {
                     mutableStateOf(false)
@@ -381,7 +531,11 @@ fun PlayerScreen(
                                         )
                                     )
                                 }
-                            }
+                            },
+                            onScrollOffsetChange = {
+                                backgroundScrollOffset.floatValue = it
+                            },
+                            paletteColor = backgroundPaletteColor
                         )
                     }
 
@@ -449,6 +603,10 @@ fun PlayerScreen(
                             gridStates = gridStates,
                             topBarTabs = tabs,
                             defaultTab = viewModel.settings.defaultTab,
+                            isPlaying = playbackState.isPlaying,
+                            onScrollOffsetChange = {
+                                backgroundScrollOffset.floatValue = it
+                            },
                             onTabChange = {
                                 selectedTab = it
                             },
@@ -487,6 +645,22 @@ fun PlayerScreen(
                                 viewModel.onEvent(PlayerScreenEvent.OnGoToArtistClick(it))
                                 navController.popBackStack(PlayerRoutes.Main, false)
                                 navController.navigate(PlayerRoutes.Playlist)
+                            },
+                            onDeleteTracksClick = {
+                                tracksPendingDelete = it
+                            },
+                            onDeletePlaylistsClick = {
+                                playlistsPendingDelete = it
+                            },
+                            onSetPlaylistCoverClick = { playlist, uri ->
+                                viewModel.onEvent(
+                                    PlayerScreenEvent.OnSetPlaylistCoverClick(playlist, uri)
+                                )
+                            },
+                            onRemovePlaylistCoverClick = { playlist ->
+                                viewModel.onEvent(
+                                    PlayerScreenEvent.OnRemovePlaylistCoverClick(playlist)
+                                )
                             },
                             playlists = playlists,
                             albumPlaylists = albumPlaylists,
@@ -664,6 +838,7 @@ fun PlayerScreen(
                                 listState = listState,
                                 playlist = playlist,
                                 currentTrack = currentTrack,
+                                isPlaying = playbackState.isPlaying,
                                 onTrackClick = { track, playlist ->
                                     viewModel.onEvent(
                                         PlayerScreenEvent.OnTrackClick(
@@ -695,6 +870,9 @@ fun PlayerScreen(
                                     viewModel.onEvent(PlayerScreenEvent.OnGoToArtistClick(it))
                                     navController.popBackStack(PlayerRoutes.Main, false)
                                     navController.navigate(PlayerRoutes.Playlist)
+                                },
+                                onDeleteTracksClick = {
+                                    tracksPendingDelete = it
                                 },
                                 trackSort = trackSort,
                                 trackSortOrder = trackSortOrder,
@@ -773,6 +951,7 @@ fun PlayerScreen(
                                 listState = listState,
                                 playlist = playlist,
                                 currentTrack = currentTrack,
+                                isPlaying = playbackState.isPlaying,
                                 onRenamePlaylistClick = {
                                     showRenameSheet = true
                                 },
@@ -819,6 +998,9 @@ fun PlayerScreen(
                                     navController.popBackStack(PlayerRoutes.Main, false)
                                     navController.navigate(PlayerRoutes.Playlist)
                                 },
+                                onDeleteTracksClick = {
+                                    tracksPendingDelete = it
+                                },
                                 onTrackListReorder = {
                                     viewModel.onEvent(
                                         PlayerScreenEvent.OnPlaylistReorder(
@@ -854,12 +1036,13 @@ fun PlayerScreen(
 
                             if (showDeleteDialog) {
                                 DeletePlaylistDialog(
+                                    playlists = listOf(playlist),
                                     onConfirm = {
                                         showDeleteDialog = false
                                         navController.navigateUp()
                                         viewModel.onEvent(
-                                            PlayerScreenEvent.OnDeletePlaylistClick(
-                                                playlist
+                                            PlayerScreenEvent.OnDeletePlaylistsClick(
+                                                listOf(playlist)
                                             )
                                         )
                                     },
@@ -872,11 +1055,33 @@ fun PlayerScreen(
                     }
                 }
 
-                Column(
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .align(Alignment.BottomCenter),
                 ) {
+                    if (currentTrack != null) {
+                        // Transparent above, fully opaque at roughly 55% of the mini
+                        // player height, then the same animated colour continues under
+                        // the nav bar.
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .height(170.dp)
+                                .drawBehind {
+                                    miniPlayerBackdrop.color =
+                                        backgroundAnimator.baseColor
+                                    miniPlayerBackdrop.draw(this)
+                                }
+                        )
+                    }
+
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.BottomCenter)
+                    ) {
                     val isPlayerExpanded by remember {
                         derivedStateOf { playbackState.isPlayerExpanded }
                     }
@@ -899,8 +1104,11 @@ fun PlayerScreen(
                     ) {
                         currentTrack?.let {
 
-                            if (useAlbumArtColor) {
-                                LaunchedEffect(coverArtBitmap) {
+                            // The dominant color feeds both the theme (only when the
+                            // album-art color setting is on) and the Home/Library
+                            // dynamic background.
+                            LaunchedEffect(coverArtBitmap, useAlbumArtColor, dynamicBackgroundEnabled) {
+                                if (useAlbumArtColor || dynamicBackgroundEnabled) {
                                     coverArtBitmap?.let {
                                         dominantColorState.updateFrom(it)
                                     }
@@ -968,6 +1176,12 @@ fun PlayerScreen(
                                     navController.popBackStack(PlayerRoutes.Main, false)
                                     navController.navigate(PlayerRoutes.Playlist)
                                 },
+                                onDeleteFromDeviceClick = {
+                                    tracksPendingDelete = listOf(it)
+                                },
+                                onDeleteTracksClick = {
+                                    tracksPendingDelete = it
+                                },
                                 onLyricsSheetExpandedChange = {
                                     viewModel.onEvent(
                                         PlayerScreenEvent.OnLyricsSheetExpandedChange(it)
@@ -983,6 +1197,7 @@ fun PlayerScreen(
                                     viewModel.onEvent(PlayerScreenEvent.OnSettingsClick)
                                 },
                                 settings = viewModel.settings,
+                                dominantColor = backgroundPaletteColor,
                                 showBottomBar = showBottomBar,
                                 onRemoveFromQueueClick = {
                                     viewModel.onEvent(PlayerScreenEvent.OnRemoveFromQueueClick(it))
@@ -1022,8 +1237,11 @@ fun PlayerScreen(
                                     launchSingleTop = true
                                     restoreState = true
                                 }
-                            }
+                            },
+                            backgroundColor = backgroundPaletteColor ?: LotusNearBlack,
+                            backgroundColorProvider = { backgroundAnimator.baseColor }
                         )
+                    }
                     }
                 }
 
@@ -1129,11 +1347,12 @@ fun PlayerScreen(
                             showAddToOrCreatePlaylistSheet = false
                             showCreatePlaylistOnly = false
                         },
-                        onCreate = { name, tracks ->
+                        onCreate = { name, tracks, coverUri ->
                             viewModel.onEvent(
                                 PlayerScreenEvent.OnCreatePlaylistClick(
                                     name = name,
-                                    tracks = tracks
+                                    tracks = tracks,
+                                    coverUri = coverUri
                                 )
                             )
                             showAddToOrCreatePlaylistSheet = false
@@ -1163,6 +1382,37 @@ fun PlayerScreen(
                         modifier = Modifier.fillMaxSize()
                     )
                 }
+
+                if (playlistsPendingDelete.isNotEmpty()) {
+                    DeletePlaylistDialog(
+                        playlists = playlistsPendingDelete,
+                        onConfirm = {
+                            val playlists = playlistsPendingDelete
+                            playlistsPendingDelete = emptyList()
+                            viewModel.onEvent(
+                                PlayerScreenEvent.OnDeletePlaylistsClick(playlists)
+                            )
+                        },
+                        onDismissRequest = {
+                            playlistsPendingDelete = emptyList()
+                        }
+                    )
+                }
+
+                if (tracksPendingDelete.isNotEmpty()) {
+                    DeleteTracksDialog(
+                        tracks = tracksPendingDelete,
+                        onConfirm = {
+                            val tracks = tracksPendingDelete
+                            tracksPendingDelete = emptyList()
+                            tracksQueuedForDeletion = tracks
+                            deleteRunToken++
+                        },
+                        onDismissRequest = {
+                            tracksPendingDelete = emptyList()
+                        }
+                    )
+                }
             }
         }
         }
@@ -1174,6 +1424,8 @@ fun MainPlayerScreen(
     gridStates: Map<Tab, LazyGridState>,
     topBarTabs: List<Tab>,
     defaultTab: Tab,
+    isPlaying: Boolean = false,
+    onScrollOffsetChange: (Float) -> Unit = {},
     openSearchOnLibrary: Boolean = false,
     onSearchOpened: () -> Unit = {},
     onTabChange: (Tab) -> Unit = {},
@@ -1186,6 +1438,10 @@ fun MainPlayerScreen(
     onViewTrackInfoClick: (Track) -> Unit,
     onGoToAlbumClick: (Track) -> Unit,
     onGoToArtistClick: (Track) -> Unit,
+    onDeleteTracksClick: (List<Track>) -> Unit,
+    onDeletePlaylistsClick: (List<Playlist>) -> Unit,
+    onSetPlaylistCoverClick: (Playlist, Uri) -> Unit,
+    onRemovePlaylistCoverClick: (Playlist) -> Unit,
     playlists: List<Playlist>,
     albumPlaylists: List<Playlist>,
     artistPlaylists: List<Playlist>,
@@ -1211,6 +1467,19 @@ fun MainPlayerScreen(
     onSettingsClick: () -> Unit
 ) {
     val context = LocalContext.current
+
+    var playlistPendingCover by remember {
+        mutableStateOf<Playlist?>(null)
+    }
+    val playlistCoverPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickVisualMedia()
+    ) { uri ->
+        val playlist = playlistPendingCover
+        playlistPendingCover = null
+        if (uri != null && playlist != null) {
+            onSetPlaylistCoverClick(playlist, uri)
+        }
+    }
 
     var collapseFraction by remember {
         mutableFloatStateOf(0f)
@@ -1267,11 +1536,6 @@ fun MainPlayerScreen(
         },
         showTabsRow = topBarContent == TopBarContent.Default,
         tabTitleTextStyle = MaterialTheme.typography.titleLarge.copy(
-            fontSize = lerp(
-                MaterialTheme.typography.titleLarge.fontSize,
-                MaterialTheme.typography.displaySmall.fontSize,
-                collapseFraction
-            ),
             fontWeight = FontWeight.Bold
         ),
         topBarButtons = { tab ->
@@ -1304,7 +1568,15 @@ fun MainPlayerScreen(
                                 Text(
                                     text = stringResource(R.string.your_library),
                                     style = MaterialTheme.typography.titleLarge,
-                                    color = MaterialTheme.colorScheme.primary
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.graphicsLayer {
+                                        val fraction = collapseFraction
+                                        alpha = 1f - fraction * 0.85f
+                                        val scale = 1f - fraction * 0.12f
+                                        scaleX = scale
+                                        scaleY = scale
+                                        transformOrigin = TransformOrigin(0f, 0.5f)
+                                    }
                                 )
 
                                 Spacer(modifier = Modifier.weight(1f))
@@ -1436,6 +1708,7 @@ fun MainPlayerScreen(
                                 placeholder = if (replaceSearchWithFilter && tab == Tab.Tracks) {
                                     context.resources.getString(R.string.filter)
                                 } else context.resources.getString(R.string.search),
+                                glass = true,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .padding(horizontal = 48.dp)
@@ -1561,6 +1834,110 @@ fun MainPlayerScreen(
                                         )
                                     )
                                 }
+
+                                if (tab == Tab.Playlists && selectedPlaylists.size == 1) {
+                                    val selectedPlaylist = selectedPlaylists.first()
+                                    var showCoverMenu by remember(selectedPlaylist) {
+                                        mutableStateOf(false)
+                                    }
+
+                                    Box {
+                                        IconButton(
+                                            onClick = {
+                                                showCoverMenu = true
+                                            }
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Rounded.Image,
+                                                contentDescription = context.resources.getString(
+                                                    R.string.change_cover
+                                                )
+                                            )
+                                        }
+
+                                        DropdownMenu(
+                                            expanded = showCoverMenu,
+                                            onDismissRequest = {
+                                                showCoverMenu = false
+                                            }
+                                        ) {
+                                            DropdownMenuItem(
+                                                text = {
+                                                    Text(
+                                                        text = context.resources.getString(
+                                                            R.string.change_cover
+                                                        )
+                                                    )
+                                                },
+                                                onClick = {
+                                                    showCoverMenu = false
+                                                    playlistPendingCover = selectedPlaylist
+                                                    playlistCoverPicker.launch(
+                                                        PickVisualMediaRequest(
+                                                            ActivityResultContracts.PickVisualMedia.ImageOnly
+                                                        )
+                                                    )
+                                                    isInSelectionMode = false
+                                                    selectedPlaylists.clear()
+                                                }
+                                            )
+
+                                            if (selectedPlaylist.coverPath != null) {
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Text(
+                                                            text = context.resources.getString(
+                                                                R.string.remove_cover
+                                                            )
+                                                        )
+                                                    },
+                                                    onClick = {
+                                                        showCoverMenu = false
+                                                        onRemovePlaylistCoverClick(selectedPlaylist)
+                                                        isInSelectionMode = false
+                                                        selectedPlaylists.clear()
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if (tab == Tab.Tracks && selectedTracks.isNotEmpty()) {
+                                    IconButton(
+                                        onClick = {
+                                            onDeleteTracksClick(selectedTracks.toList())
+                                            isInSelectionMode = false
+                                            selectedTracks.clear()
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Delete,
+                                            contentDescription = context.resources.getString(
+                                                R.string.delete_from_device
+                                            ),
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                } else if (
+                                    tab == Tab.Playlists && selectedPlaylists.isNotEmpty()
+                                ) {
+                                    IconButton(
+                                        onClick = {
+                                            onDeletePlaylistsClick(selectedPlaylists.toList())
+                                            isInSelectionMode = false
+                                            selectedPlaylists.clear()
+                                        }
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Rounded.Delete,
+                                            contentDescription = context.resources.getString(
+                                                R.string.delete_playlist
+                                            ),
+                                            tint = MaterialTheme.colorScheme.error
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -1570,6 +1947,7 @@ fun MainPlayerScreen(
         collapseFraction = {
             collapseFraction = it
         },
+        onScrollOffsetChange = onScrollOffsetChange,
         contentHorizontalArrangement = Arrangement.spacedBy(
             16.dp,
             alignment = Alignment.CenterHorizontally
@@ -1591,6 +1969,7 @@ fun MainPlayerScreen(
                     trackList(
                         trackList = trackList.filterTracks(searchFieldValue),
                         currentTrack = currentTrack,
+                        isPlaying = isPlaying,
                         onTrackClick = {
                             onTrackClick(
                                 it,
@@ -1615,6 +1994,9 @@ fun MainPlayerScreen(
                         onLongClick = {
                             isInSelectionMode = true
                             selectedTracks.add(it)
+                        },
+                        onDeleteFromDeviceClick = {
+                            onDeleteTracksClick(listOf(it))
                         }
                     )
                 } else {

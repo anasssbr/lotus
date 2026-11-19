@@ -29,7 +29,22 @@ class RealmPlaylistRepository(
         realm.write {
             val queryResult = query<PlaylistJson>(query = "name = $0", playlist.name!!).find().firstOrNull()
             queryResult?.let {
-                findLatest(it)?.json = playlist.copy(trackList = trackList).toPlaylistJson().json
+                val storedCoverPath = runCatching { it.toPlaylist().coverPath }.getOrNull()
+                val updated = playlist.copy(
+                    trackList = trackList,
+                    coverPath = playlist.coverPath ?: storedCoverPath
+                )
+                findLatest(it)?.json = updated.toPlaylistJson().json
+            }
+        }
+    }
+
+    override suspend fun updatePlaylistCover(playlist: Playlist, coverPath: String?) {
+        realm.write {
+            val queryResult = query<PlaylistJson>(query = "name = $0", playlist.name!!).find().firstOrNull()
+            queryResult?.let {
+                val existing = runCatching { it.toPlaylist() }.getOrNull() ?: playlist
+                findLatest(it)?.json = existing.copy(coverPath = coverPath).toPlaylistJson().json
             }
         }
     }
@@ -42,8 +57,19 @@ class RealmPlaylistRepository(
     }
 
     override suspend fun renamePlaylist(playlist: Playlist, name: String) {
+        val storedCoverPath = realm
+            .query<PlaylistJson>(query = "name = $0", playlist.name!!)
+            .find()
+            .firstOrNull()
+            ?.let { json -> runCatching { json.toPlaylist().coverPath }.getOrNull() }
+
         deletePlaylist(playlist)
-        insertPlaylist(playlist.copy(name = name))
+        insertPlaylist(
+            playlist.copy(
+                name = name,
+                coverPath = playlist.coverPath ?: storedCoverPath
+            )
+        )
     }
 }
 

@@ -25,6 +25,7 @@ class Settings(context: Context) {
     private val useAlbumArtColorKey = "use-album-art-color"
     private val paletteStyleKey = "palette-style"
     private val amoledDarkThemeKey = "amoled-dark-theme"
+    private val dynamicBackgroundKey = "dynamic-background"
 
     private val lyricsFontSizeKey = "lyrics-font-size"
     private val lyricsFontWeightKey = "lyrics-font-weight"
@@ -139,6 +140,20 @@ class Settings(context: Context) {
         }
         with(sharedPreferences.edit()) {
             putBoolean(amoledDarkThemeKey, value)
+            apply()
+        }
+    }
+
+    private val _dynamicBackground = MutableStateFlow(
+        sharedPreferences.getBoolean(dynamicBackgroundKey, true)
+    )
+    val dynamicBackground = _dynamicBackground.asStateFlow()
+    fun updateDynamicBackground(value: Boolean) {
+        _dynamicBackground.update {
+            value
+        }
+        with(sharedPreferences.edit()) {
+            putBoolean(dynamicBackgroundKey, value)
             apply()
         }
     }

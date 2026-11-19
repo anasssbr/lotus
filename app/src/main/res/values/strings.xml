@@ -249,8 +249,19 @@
     <string name="rename_playlist">Rename playlist</string>
     <string name="rename">Rename</string>
     <string name="delete">Delete</string>
-    <string name="delete_playlist_dialog_title">Delete playlist?</string>
-    <string name="delete_playlist_dialog_text">This won\'t affect the tracks in it.</string>
+    <string name="delete_playlist_dialog_title">Delete \'%1$s\'?</string>
+    <string name="delete_playlists_dialog_title">Delete %1$d playlists?</string>
+    <string name="delete_playlist_dialog_text">The songs stay on your phone.</string>
+    <string name="playlist_deleted">Playlist deleted</string>
+    <string name="playlists_deleted">Playlists deleted</string>
+    <string name="undo">Undo</string>
+    <string name="delete_from_device">Delete from device</string>
+    <string name="delete_track_dialog_title">Delete \'%1$s\' from your phone?</string>
+    <string name="delete_tracks_dialog_title">Delete %1$d songs from your phone?</string>
+    <string name="delete_track_dialog_text">This can\'t be undone.</string>
+    <string name="deleted">Deleted</string>
+    <string name="delete_failed_permission">Couldn\'t delete: this file isn\'t owned by the app. Grant folder access or use Files.</string>
+    <string name="delete_failed">Couldn\'t delete the file. It may be read-only or already missing.</string>
     <string name="nothing_yet">Nothing yet.</string>
     <string name="unknown_folder">Unknown Folder</string>
     <string name="enable_list_view">Enable list view</string>
@@ -282,8 +293,9 @@
     <string name="discard_playlist_text">The title and songs you picked won\'t be saved.</string>
     <string name="discard">Discard</string>
     <string name="keep_editing">Keep editing</string>
-    <string name="reroll_colors">New colors</string>
     <string name="pick_playlist_cover">Pick a cover</string>
+    <string name="change_cover">Change cover</string>
+    <string name="remove_cover">Remove cover</string>
     <string name="remove_playlist_cover">Remove cover</string>
     <string name="remove_song">Remove song</string>
     <string name="search_songs_hint">Search songs</string>
@@ -325,6 +337,8 @@
     <string name="use_system_key_colors_explain">Use system accent colors</string>
     <string name="use_album_art_color">Album art color</string>
     <string name="use_album_art_color_explain">Use dominant color of current track\'s cover art</string>
+    <string name="dynamic_background">Dynamic background</string>
+    <string name="dynamic_background_explain">Slow drifting colors from the playing track</string>
 
     <!-- Playback settings -->
     <string name="audio_focus">Audio focus</string>

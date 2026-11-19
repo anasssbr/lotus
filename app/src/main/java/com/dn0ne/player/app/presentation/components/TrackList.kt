@@ -6,8 +6,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.grid.LazyGridScope
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.dn0ne.player.app.domain.track.Track
@@ -15,6 +16,7 @@ import com.dn0ne.player.app.domain.track.Track
 fun LazyListScope.trackList(
     trackList: List<Track>,
     currentTrack: Track?,
+    isPlaying: Boolean = false,
     onTrackClick: (Track) -> Unit,
     onPlayNextClick: (Track) -> Unit,
     onAddToQueueClick: (Track) -> Unit,
@@ -22,7 +24,8 @@ fun LazyListScope.trackList(
     onViewTrackInfoClick: (Track) -> Unit,
     onGoToAlbumClick: (Track) -> Unit,
     onGoToArtistClick: (Track) -> Unit,
-    onLongClick: (Track) -> Unit = {}
+    onLongClick: (Track) -> Unit = {},
+    onDeleteFromDeviceClick: (Track) -> Unit = {}
 ) {
     if (trackList.isEmpty()) {
         item {
@@ -30,13 +33,16 @@ fun LazyListScope.trackList(
         }
     }
 
-    items(
+    itemsIndexed(
         items = trackList,
-        key = { it.uri }
-    ) { track ->
+        key = { _, track -> track.uri }
+    ) { index, track ->
+        val reduceMotion = rememberReduceMotion()
+
         TrackListItem(
             track = track,
             isCurrent = currentTrack == track,
+            isPlaying = isPlaying,
             onClick = { onTrackClick(track) },
             onLongClick = { onLongClick(track) },
             onPlayNextClick = { onPlayNextClick(track) },
@@ -45,9 +51,11 @@ fun LazyListScope.trackList(
             onViewTrackInfoClick = { onViewTrackInfoClick(track) },
             onGoToAlbumClick = { onGoToAlbumClick(track) },
             onGoToArtistClick = { onGoToArtistClick(track) },
+            onDeleteFromDeviceClick = { onDeleteFromDeviceClick(track) },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp)
+                .staggeredFadeIn(index = index, enabled = !reduceMotion)
                 .animateItem(fadeInSpec = null, fadeOutSpec = null)
         )
     }
@@ -56,6 +64,7 @@ fun LazyListScope.trackList(
 fun LazyGridScope.trackList(
     trackList: List<Track>,
     currentTrack: Track?,
+    isPlaying: Boolean = false,
     onTrackClick: (Track) -> Unit,
     onPlayNextClick: (Track) -> Unit,
     onAddToQueueClick: (Track) -> Unit,
@@ -64,6 +73,7 @@ fun LazyGridScope.trackList(
     onGoToAlbumClick: (Track) -> Unit,
     onGoToArtistClick: (Track) -> Unit,
     onLongClick: (Track) -> Unit,
+    onDeleteFromDeviceClick: (Track) -> Unit = {},
 ) {
     if (trackList.isEmpty()) {
         item {
@@ -71,13 +81,16 @@ fun LazyGridScope.trackList(
         }
     }
 
-    items(
+    itemsIndexed(
         items = trackList,
-        key = { it.uri }
-    ) { track ->
+        key = { _, track -> track.uri }
+    ) { index, track ->
+        val reduceMotion = rememberReduceMotion()
+
         TrackListItem(
             track = track,
             isCurrent = currentTrack == track,
+            isPlaying = isPlaying,
             onClick = { onTrackClick(track) },
             onLongClick = { onLongClick(track) },
             onPlayNextClick = { onPlayNextClick(track) },
@@ -86,8 +99,10 @@ fun LazyGridScope.trackList(
             onViewTrackInfoClick = { onViewTrackInfoClick(track) },
             onGoToAlbumClick = { onGoToAlbumClick(track) },
             onGoToArtistClick = { onGoToArtistClick(track) },
+            onDeleteFromDeviceClick = { onDeleteFromDeviceClick(track) },
             modifier = Modifier
                 .fillMaxWidth()
+                .staggeredFadeIn(index = index, enabled = !reduceMotion)
                 .animateItem(fadeInSpec = null, fadeOutSpec = null)
         )
     }

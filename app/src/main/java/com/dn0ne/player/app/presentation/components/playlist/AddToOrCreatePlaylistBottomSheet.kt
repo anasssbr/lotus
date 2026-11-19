@@ -222,6 +222,7 @@ fun AddToOrCreatePlaylistBottomSheet(
                                         coverArtPreviewUris = playlist.trackList
                                             .take(4)
                                             .map { it.coverArtUri },
+                                        coverPath = playlist.coverPath,
                                         modifier = Modifier
                                             .clip(ShapeDefaults.Large)
                                             .clickable {

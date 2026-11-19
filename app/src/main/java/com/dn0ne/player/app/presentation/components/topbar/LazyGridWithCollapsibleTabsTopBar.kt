@@ -1,6 +1,7 @@
 package com.dn0ne.player.app.presentation.components.topbar
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -42,16 +43,22 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import my.nanihadesuka.compose.LazyVerticalGridScrollbar
 import my.nanihadesuka.compose.ScrollbarSettings
+import kotlin.math.abs
 
 /**
  * Library header: a fixed title row (provided through [topBarButtons]), a row of outlined
@@ -74,6 +81,7 @@ fun LazyGridWithCollapsibleTabsTopBar(
     maxTopBarHeightLandscape: Dp = 150.dp,
     collapsedByDefault: Boolean = false,
     collapseFraction: (Float) -> Unit = {},
+    onScrollOffsetChange: (Float) -> Unit = {},
     gridStates: Map<Tab, LazyGridState> = emptyMap(),
     contentPadding: PaddingValues = PaddingValues(0.dp),
     contentHorizontalArrangement: Arrangement.Horizontal = Arrangement.Start,
@@ -113,6 +121,18 @@ fun LazyGridWithCollapsibleTabsTopBar(
         }
     }
 
+    LaunchedEffect(selectedTab, topBarTabs) {
+        snapshotFlow {
+            gridStateOf(selectedTab).layoutInfo.visibleItemsInfo.firstOrNull()?.offset?.y ?: 0
+        }
+            .distinctUntilChanged()
+            .collect { offset ->
+                val scrolled = (-offset).toFloat()
+                collapseFraction((scrolled / 240f).coerceIn(0f, 1f))
+                onScrollOffsetChange(scrolled)
+            }
+    }
+
     fun selectTab(tab: Tab) {
         val index = topBarTabs.indexOf(tab)
         if (index < 0) return
@@ -120,7 +140,10 @@ fun LazyGridWithCollapsibleTabsTopBar(
         selectedTab = tab
         onTabChange(tab)
         coroutineScope.launch {
-            pagerState.animateScrollToPage(index)
+            pagerState.animateScrollToPage(
+                page = index,
+                animationSpec = tween(durationMillis = 220)
+            )
         }
     }
 
@@ -155,55 +178,52 @@ fun LazyGridWithCollapsibleTabsTopBar(
                 val tab = topBarTabs[page]
                 val tabGridState = gridStateOf(tab)
 
-                LazyVerticalGridScrollbar(
-                    state = tabGridState,
-                    settings = ScrollbarSettings(
-                        enabled = enableScrollbar,
-                        thumbUnselectedColor = MaterialTheme.colorScheme.surfaceContainer,
-                        thumbSelectedColor = MaterialTheme.colorScheme.primaryContainer,
-                    )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            val pageOffset = (pagerState.currentPage - page) +
+                                    pagerState.currentPageOffsetFraction
+                            alpha = 1f - (abs(pageOffset) * 0.8f).coerceIn(0f, 1f)
+                            translationX = pageOffset * 24.dp.toPx()
+                        }
                 ) {
-                    LazyVerticalGrid(
-                        columns = gridCells(tab),
+                    LazyVerticalGridScrollbar(
                         state = tabGridState,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(contentPadding),
-                        horizontalArrangement = contentHorizontalArrangement,
-                        verticalArrangement = contentVerticalArrangement
+                        settings = ScrollbarSettings(
+                            enabled = enableScrollbar,
+                            thumbUnselectedColor = MaterialTheme.colorScheme.surfaceContainer,
+                            thumbSelectedColor = MaterialTheme.colorScheme.primaryContainer,
+                        )
                     ) {
-                        tabContent(tab)
-
-                        item(
-                            span = {
-                                GridItemSpan(this.maxLineSpan)
-                            }
+                        LazyVerticalGrid(
+                            columns = gridCells(tab),
+                            state = tabGridState,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(contentPadding),
+                            horizontalArrangement = contentHorizontalArrangement,
+                            verticalArrangement = contentVerticalArrangement
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(200.dp)
-                            )
+                            tabContent(tab)
+
+                            item(
+                                span = {
+                                    GridItemSpan(this.maxLineSpan)
+                                }
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(200.dp)
+                                )
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Cheap, static fade so the list melts into the background above the mini player.
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .height(110.dp)
-                .background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.55f to MaterialTheme.colorScheme.background.copy(alpha = 0.6f),
-                        1f to MaterialTheme.colorScheme.background
-                    )
-                )
-        )
     }
 }
 
@@ -242,13 +262,29 @@ private fun LibraryTabsRow(
 
             Box(
                 modifier = Modifier
+                    .then(
+                        if (selected) {
+                            Modifier.shadow(
+                                elevation = 10.dp,
+                                shape = CircleShape,
+                                ambientColor = accent,
+                                spotColor = accent
+                            )
+                        } else Modifier
+                    )
                     .clip(CircleShape)
                     .border(
                         width = 1.dp,
-                        color = if (selected) accent else MaterialTheme.colorScheme.outlineVariant,
+                        color = if (selected) {
+                            accent.copy(alpha = 0.85f)
+                        } else {
+                            Color.White.copy(alpha = 0.14f)
+                        },
                         shape = CircleShape
                     )
-                    .background(if (selected) accent.copy(alpha = 0.14f) else Color.Transparent)
+                    .background(
+                        if (selected) accent.copy(alpha = 0.16f) else Color.Transparent
+                    )
                     .clickable { onSelect(tab) }
                     .padding(horizontal = 15.dp, vertical = 8.dp)
             ) {

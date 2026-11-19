@@ -1,5 +1,6 @@
 package com.dn0ne.player.app.presentation
 
+import android.net.Uri
 import com.dn0ne.player.app.domain.metadata.Metadata
 import com.dn0ne.player.app.domain.metadata.MetadataSearchResult
 import com.dn0ne.player.app.domain.sort.PlaylistSort
@@ -56,10 +57,14 @@ sealed interface PlayerScreenEvent {
 
     data class OnCreatePlaylistClick(
         val name: String,
-        val tracks: List<Track> = emptyList()
+        val tracks: List<Track> = emptyList(),
+        val coverUri: Uri? = null
     ): PlayerScreenEvent
     data class OnRenamePlaylistClick(val name: String, val playlist: Playlist): PlayerScreenEvent
-    data class OnDeletePlaylistClick(val playlist: Playlist): PlayerScreenEvent
+    data class OnSetPlaylistCoverClick(val playlist: Playlist, val coverUri: Uri): PlayerScreenEvent
+    data class OnRemovePlaylistCoverClick(val playlist: Playlist): PlayerScreenEvent
+    data class OnDeletePlaylistsClick(val playlists: List<Playlist>): PlayerScreenEvent
+    data class OnTracksDeleted(val tracks: List<Track>): PlayerScreenEvent
     data class OnAddToPlaylist(val tracks: List<Track>, val playlist: Playlist): PlayerScreenEvent
     data class OnRemoveFromPlaylist(val tracks: List<Track>, val playlist: Playlist): PlayerScreenEvent
     data class OnPlaylistReorder(val trackList: List<Track>, val playlist: Playlist): PlayerScreenEvent

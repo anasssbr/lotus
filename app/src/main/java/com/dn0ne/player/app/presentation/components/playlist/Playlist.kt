@@ -17,6 +17,7 @@ import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.AddToQueue
 import androidx.compose.material.icons.rounded.ArrowBackIosNew
 import androidx.compose.material.icons.rounded.Close
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.FilterList
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SelectAll
@@ -61,6 +62,7 @@ fun Playlist(
     listState: LazyListState = rememberLazyListState(),
     playlist: Playlist,
     currentTrack: Track?,
+    isPlaying: Boolean = false,
     onTrackClick: (Track, Playlist) -> Unit,
     onPlayNextClick: (Track) -> Unit,
     onAddToQueueClick: (List<Track>) -> Unit,
@@ -68,6 +70,7 @@ fun Playlist(
     onViewTrackInfoClick: (Track) -> Unit,
     onGoToAlbumClick: (Track) -> Unit,
     onGoToArtistClick: (Track) -> Unit,
+    onDeleteTracksClick: (List<Track>) -> Unit,
     trackSort: TrackSort,
     trackSortOrder: SortOrder,
     onTrackSortChange: (TrackSort?, SortOrder?) -> Unit,
@@ -320,6 +323,22 @@ fun Playlist(
                                         )
                                     )
                                 }
+
+                                IconButton(
+                                    onClick = {
+                                        onDeleteTracksClick(selectedTracks.toList())
+                                        isInSelectionMode = false
+                                        selectedTracks.clear()
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Rounded.Delete,
+                                        contentDescription = context.resources.getString(
+                                            R.string.delete_from_device
+                                        ),
+                                        tint = MaterialTheme.colorScheme.error
+                                    )
+                                }
                             }
                         }
                     }
@@ -338,6 +357,7 @@ fun Playlist(
             trackList(
                 trackList = playlist.trackList.filterTracks(searchFieldValue),
                 currentTrack = currentTrack,
+                isPlaying = isPlaying,
                 onTrackClick = { track ->
                     onTrackClick(
                         track,
@@ -357,6 +377,9 @@ fun Playlist(
                 onLongClick = {
                     isInSelectionMode = true
                     selectedTracks.add(it)
+                },
+                onDeleteFromDeviceClick = {
+                    onDeleteTracksClick(listOf(it))
                 }
             )
         } else {

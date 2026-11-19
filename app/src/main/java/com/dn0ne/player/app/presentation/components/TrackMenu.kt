@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.PlaylistAdd
 import androidx.compose.material.icons.rounded.AddToQueue
 import androidx.compose.material.icons.rounded.Album
+import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Info
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Person
@@ -46,7 +47,8 @@ fun TrackMenu(
     onViewTrackInfoClick: () -> Unit,
     onGoToAlbumClick: () -> Unit,
     onGoToArtistClick: () -> Unit,
-    onRemoveFromPlaylistClick: (() -> Unit)? = null
+    onRemoveFromPlaylistClick: (() -> Unit)? = null,
+    onDeleteFromDeviceClick: (() -> Unit)? = null
 ) {
     DropdownMenu(
         expanded = isExpanded,
@@ -177,6 +179,27 @@ fun TrackMenu(
                 )
             }
         }
+        onDeleteFromDeviceClick?.let {
+            DropdownMenuItem(
+                text = {
+                    Text(
+                        text = context.resources.getString(R.string.delete_from_device),
+                        color = MaterialTheme.colorScheme.error
+                    )
+                },
+                onClick = {
+                    it()
+                    onDismissRequest()
+                },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Rounded.Delete,
+                        tint = MaterialTheme.colorScheme.error,
+                        contentDescription = null
+                    )
+                }
+            )
+        }
         /*DropdownMenuItem(
             text = {
                 Text(text = context.resources.getString(R.string.track_info))
@@ -204,6 +227,7 @@ fun TrackMenuButton(
     onGoToAlbumClick: () -> Unit,
     onGoToArtistClick: () -> Unit,
     onRemoveFromPlaylistClick: (() -> Unit)? = null,
+    onDeleteFromDeviceClick: (() -> Unit)? = null,
     tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
 ) {
     Box {
@@ -233,7 +257,8 @@ fun TrackMenuButton(
             onViewTrackInfoClick = onViewTrackInfoClick,
             onGoToAlbumClick = onGoToAlbumClick,
             onGoToArtistClick = onGoToArtistClick,
-            onRemoveFromPlaylistClick = onRemoveFromPlaylistClick
+            onRemoveFromPlaylistClick = onRemoveFromPlaylistClick,
+            onDeleteFromDeviceClick = onDeleteFromDeviceClick
         )
     }
 }

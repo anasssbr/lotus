@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.MusicNote
@@ -31,14 +33,23 @@ import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -47,6 +58,14 @@ import com.dn0ne.player.R
 import com.dn0ne.player.app.domain.listening.DailyListening
 import com.dn0ne.player.app.domain.track.Track
 import com.dn0ne.player.app.presentation.components.CoverArt
+import com.dn0ne.player.app.presentation.components.TitleShadow
+import com.dn0ne.player.app.presentation.components.background.paletteCardColor
+import com.dn0ne.player.app.presentation.components.rememberReduceMotion
+import com.dn0ne.player.app.presentation.components.staggeredFadeIn
+import com.kmpalette.color
+import com.kmpalette.rememberDominantColorState
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 import java.util.Locale
 
@@ -56,9 +75,42 @@ fun HomeScreen(
     onSearchClick: () -> Unit,
     onTrackClick: (List<Track>, Track) -> Unit,
     onPlayMixClick: () -> Unit,
+    onScrollOffsetChange: (Float) -> Unit = {},
+    paletteColor: Color? = null,
     modifier: Modifier = Modifier
 ) {
+    val cardColor = remember(paletteColor) {
+        paletteCardColor(paletteColor)
+    }
+    val listState = rememberLazyListState()
+    val reduceMotion = rememberReduceMotion()
+    val collapseDistance = with(LocalDensity.current) { 170.dp.toPx() }
+    val collapse = remember {
+        derivedStateOf {
+            if (listState.firstVisibleItemIndex > 0) {
+                1f
+            } else {
+                (listState.firstVisibleItemScrollOffset / collapseDistance).coerceIn(0f, 1f)
+            }
+        }
+    }
+
+    LaunchedEffect(listState, reduceMotion) {
+        if (reduceMotion) {
+            onScrollOffsetChange(0f)
+            return@LaunchedEffect
+        }
+        snapshotFlow {
+            listState.layoutInfo.visibleItemsInfo.firstOrNull()?.offset ?: 0
+        }
+            .distinctUntilChanged()
+            .collect { offset ->
+                onScrollOffsetChange((-offset).toFloat())
+            }
+    }
+
     LazyColumn(
+        state = listState,
         modifier = modifier
             .fillMaxSize()
             .statusBarsPadding(),
@@ -66,13 +118,17 @@ fun HomeScreen(
         verticalArrangement = Arrangement.spacedBy(28.dp)
     ) {
         item(key = "header") {
-            HomeHeader(onSearchClick = onSearchClick)
+            HomeHeader(
+                collapse = collapse,
+                onSearchClick = onSearchClick
+            )
         }
 
         item(key = "recent") {
             RecentlyPlayedSection(
                 state = state,
-                onTrackClick = onTrackClick
+                onTrackClick = onTrackClick,
+                reduceMotion = reduceMotion
             )
         }
 
@@ -80,6 +136,7 @@ fun HomeScreen(
             MixSection(
                 mix = state.mix,
                 hasTracks = state.hasTracks,
+                cardColor = cardColor,
                 onPlayClick = onPlayMixClick,
                 onTrackClick = { track -> onTrackClick(state.mix, track) }
             )
@@ -88,13 +145,15 @@ fun HomeScreen(
         item(key = "listening") {
             ListeningTimeSection(
                 todaySeconds = state.todaySeconds,
-                week = state.week
+                week = state.week,
+                cardColor = cardColor
             )
         }
 
         item(key = "most-played") {
             MostPlayedSection(
                 tracks = state.mostPlayed,
+                cardColor = cardColor,
                 onTrackClick = onTrackClick
             )
         }
@@ -102,12 +161,23 @@ fun HomeScreen(
 }
 
 @Composable
-private fun HomeHeader(onSearchClick: () -> Unit) {
+private fun HomeHeader(
+    collapse: State<Float>,
+    onSearchClick: () -> Unit
+) {
     Column {
         Text(
             text = stringResource(R.string.home_welcome),
             style = MaterialTheme.typography.headlineLarge,
-            color = MaterialTheme.colorScheme.primary
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.graphicsLayer {
+                val fraction = collapse.value
+                alpha = 1f - fraction * 0.9f
+                val scale = 1f - fraction * 0.16f
+                scaleX = scale
+                scaleY = scale
+                translationY = -6.dp.toPx() * fraction
+            }
         )
 
         Spacer(modifier = Modifier.height(4.dp))
@@ -150,7 +220,8 @@ private fun HomeHeader(onSearchClick: () -> Unit) {
 @Composable
 private fun RecentlyPlayedSection(
     state: HomeState,
-    onTrackClick: (List<Track>, Track) -> Unit
+    onTrackClick: (List<Track>, Track) -> Unit,
+    reduceMotion: Boolean
 ) {
     Column {
         Text(
@@ -158,7 +229,7 @@ private fun RecentlyPlayedSection(
                 if (state.recentlyPlayedIsFallback) R.string.home_recently_added
                 else R.string.home_recently_played
             ),
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium.copy(shadow = TitleShadow),
             color = MaterialTheme.colorScheme.onSurface
         )
 
@@ -179,13 +250,17 @@ private fun RecentlyPlayedSection(
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                items(
+                itemsIndexed(
                     items = state.recentlyPlayed,
-                    key = { it.uri.toString() }
-                ) { track ->
+                    key = { _, track -> track.uri.toString() }
+                ) { index, track ->
                     RecentlyPlayedCard(
                         track = track,
-                        onClick = { onTrackClick(state.recentlyPlayed, track) }
+                        onClick = { onTrackClick(state.recentlyPlayed, track) },
+                        modifier = Modifier.staggeredFadeIn(
+                            index = index,
+                            enabled = !reduceMotion
+                        )
                     )
                 }
             }
@@ -196,17 +271,47 @@ private fun RecentlyPlayedSection(
 @Composable
 private fun RecentlyPlayedCard(
     track: Track,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
+    val dominantColorState = rememberDominantColorState()
+    val coroutineScope = rememberCoroutineScope()
+    val glowColor = dominantColorState.color
+
     Column(
-        modifier = Modifier
+        modifier = modifier
             .width(148.dp)
-            .clip(RoundedCornerShape(20.dp))
+            .drawBehind {
+                if (glowColor.alpha > 0.02f) {
+                    val radius = size.width * 0.72f
+                    val center = Offset(size.width / 2f, size.width / 2f)
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                glowColor.copy(alpha = 0.26f),
+                                glowColor.copy(alpha = 0.10f),
+                                Color.Transparent
+                            ),
+                            center = center,
+                            radius = radius
+                        ),
+                        radius = radius,
+                        center = center
+                    )
+                }
+            }
             .clickable(onClick = onClick)
             .padding(bottom = 4.dp)
     ) {
         CoverArt(
             uri = track.coverArtUri,
+            onCoverArtLoaded = { bitmap ->
+                bitmap?.let {
+                    coroutineScope.launch {
+                        dominantColorState.updateFrom(it)
+                    }
+                }
+            },
             modifier = Modifier
                 .size(148.dp)
                 .clip(RoundedCornerShape(20.dp))
@@ -216,7 +321,7 @@ private fun RecentlyPlayedCard(
 
         Text(
             text = track.title ?: stringResource(R.string.unknown_title),
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium.copy(shadow = TitleShadow),
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -240,13 +345,14 @@ private fun RecentlyPlayedCard(
 private fun MixSection(
     mix: List<Track>,
     hasTracks: Boolean,
+    cardColor: Color,
     onPlayClick: () -> Unit,
     onTrackClick: (Track) -> Unit
 ) {
     Column {
         Text(
             text = stringResource(R.string.home_my_mix),
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium.copy(shadow = TitleShadow),
             color = MaterialTheme.colorScheme.onSurface
         )
 
@@ -255,6 +361,7 @@ private fun MixSection(
         MixCard(
             mix = mix,
             hasTracks = hasTracks,
+            cardColor = cardColor,
             onPlayClick = onPlayClick
         )
 
@@ -275,20 +382,14 @@ private fun MixSection(
 private fun MixCard(
     mix: List<Track>,
     hasTracks: Boolean,
+    cardColor: Color,
     onPlayClick: () -> Unit
 ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
-                .background(
-                    brush = Brush.linearGradient(
-                        colors = listOf(
-                            Color(0xFF0E4A44),
-                            MaterialTheme.colorScheme.surfaceContainerHigh
-                        )
-                    )
-                )
+                .background(cardColor)
                 .clickable(enabled = mix.isNotEmpty(), onClick = onPlayClick)
                 .padding(18.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -386,7 +487,7 @@ private fun HomeTrackRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = track.title ?: stringResource(R.string.unknown_title),
-                style = MaterialTheme.typography.titleMedium,
+                style = MaterialTheme.typography.titleMedium.copy(shadow = TitleShadow),
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -417,12 +518,13 @@ private fun HomeTrackRow(
 @Composable
 private fun ListeningTimeSection(
     todaySeconds: Long,
-    week: List<DailyListening>
+    week: List<DailyListening>,
+    cardColor: Color
 ) {
     Column {
         Text(
             text = stringResource(R.string.home_listening_time),
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium.copy(shadow = TitleShadow),
             color = MaterialTheme.colorScheme.onSurface
         )
 
@@ -432,7 +534,7 @@ private fun ListeningTimeSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                .background(cardColor)
                 .padding(18.dp)
         ) {
             Row(verticalAlignment = Alignment.Bottom) {
@@ -522,12 +624,13 @@ private fun WeeklyBars(week: List<DailyListening>) {
 @Composable
 private fun MostPlayedSection(
     tracks: List<HomeTrack>,
+    cardColor: Color,
     onTrackClick: (List<Track>, Track) -> Unit
 ) {
     Column {
         Text(
             text = stringResource(R.string.home_most_played),
-            style = MaterialTheme.typography.titleMedium,
+            style = MaterialTheme.typography.titleMedium.copy(shadow = TitleShadow),
             color = MaterialTheme.colorScheme.onSurface
         )
 
@@ -538,7 +641,14 @@ private fun MostPlayedSection(
         } else {
             val trackList = tracks.map { it.track }
 
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(cardColor)
+                    .padding(8.dp),
+                verticalArrangement = Arrangement.spacedBy(2.dp)
+            ) {
                 tracks.forEach { item ->
                     MostPlayedRow(
                         item = item,
