@@ -6,18 +6,24 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyGridScope
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -27,6 +33,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -43,29 +50,31 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.dn0ne.player.app.presentation.components.design.EditorialType
+import com.dn0ne.player.app.presentation.components.library.LibraryStickyHeader
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
-import my.nanihadesuka.compose.LazyVerticalGridScrollbar
-import my.nanihadesuka.compose.ScrollbarSettings
 import kotlin.math.abs
 
 /**
- * Library header: a fixed title row (provided through [topBarButtons]), a row of outlined
- * filter chips and the paged content underneath.
+ * Library header: a fixed title block (provided through [topBarButtons]), a pinned row of
+ * outlined filter chips and the paged content underneath.
  *
- * The chip row replaces the old collapsible tab titles, but it still drives the same pager,
- * so swiping between sections keeps working.
+ * The chip row still drives the same pager, so swiping between sections keeps working.
+ * Track sections get a floating sticky label plus a thin draggable fast scroller.
  */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -90,9 +99,11 @@ fun LazyGridWithCollapsibleTabsTopBar(
     showTabsRow: Boolean = true,
     modifier: Modifier = Modifier,
     gridCells: (tab: Tab) -> GridCells = { GridCells.Fixed(1) },
+    stickyHeaderForItem: (tab: Tab, index: Int) -> LibraryStickyHeader? = { _, _ -> null },
     tabContent: LazyGridScope.(tab: Tab) -> Unit
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
 
     var selectedTab by rememberSaveable {
         mutableStateOf(defaultSelectedTab)
@@ -121,14 +132,19 @@ fun LazyGridWithCollapsibleTabsTopBar(
         }
     }
 
-    LaunchedEffect(selectedTab, topBarTabs) {
+    LaunchedEffect(selectedTab, topBarTabs, density) {
         snapshotFlow {
-            gridStateOf(selectedTab).layoutInfo.visibleItemsInfo.firstOrNull()?.offset?.y ?: 0
+            val info = gridStateOf(selectedTab).layoutInfo.visibleItemsInfo.firstOrNull()
+            (info?.index ?: 0) to (info?.offset?.y ?: 0)
         }
             .distinctUntilChanged()
-            .collect { offset ->
-                val scrolled = (-offset).toFloat()
-                collapseFraction((scrolled / 240f).coerceIn(0f, 1f))
+            .collect { (index, offset) ->
+                val scrolled = if (index > 0) {
+                    80f + (-offset).toFloat()
+                } else {
+                    (-offset).toFloat()
+                }
+                collapseFraction((scrolled / 80f).coerceIn(0f, 1f))
                 onScrollOffsetChange(scrolled)
             }
     }
@@ -185,45 +201,174 @@ fun LazyGridWithCollapsibleTabsTopBar(
                             val pageOffset = (pagerState.currentPage - page) +
                                     pagerState.currentPageOffsetFraction
                             alpha = 1f - (abs(pageOffset) * 0.8f).coerceIn(0f, 1f)
-                            translationX = pageOffset * 24.dp.toPx()
+                            // Later chips live to the right, so content slides left.
+                            translationX = -pageOffset * 24.dp.toPx()
                         }
                 ) {
-                    LazyVerticalGridScrollbar(
+                    LazyVerticalGrid(
+                        columns = gridCells(tab),
                         state = tabGridState,
-                        settings = ScrollbarSettings(
-                            enabled = enableScrollbar,
-                            thumbUnselectedColor = MaterialTheme.colorScheme.surfaceContainer,
-                            thumbSelectedColor = MaterialTheme.colorScheme.primaryContainer,
-                        )
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(contentPadding),
+                        horizontalArrangement = contentHorizontalArrangement,
+                        verticalArrangement = contentVerticalArrangement
                     ) {
-                        LazyVerticalGrid(
-                            columns = gridCells(tab),
-                            state = tabGridState,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(contentPadding),
-                            horizontalArrangement = contentHorizontalArrangement,
-                            verticalArrangement = contentVerticalArrangement
-                        ) {
-                            tabContent(tab)
+                        tabContent(tab)
+                    }
 
-                            item(
-                                span = {
-                                    GridItemSpan(this.maxLineSpan)
-                                }
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(200.dp)
-                                )
-                            }
+                    val firstVisible = tabGridState.layoutInfo.visibleItemsInfo.firstOrNull()
+                    val header = firstVisible?.let {
+                        stickyHeaderForItem(tab, it.index)
+                    }
+                    val inlineHeaderHeightPx = with(density) { 42.dp.toPx() }
+
+                    if (
+                        header != null &&
+                        (!header.isSectionStart ||
+                                (firstVisible?.offset?.y ?: 0).toFloat() < -inlineHeaderHeightPx)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .padding(start = 20.dp, top = 2.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceContainer)
+                                .padding(horizontal = 10.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = header.label,
+                                color = MaterialTheme.colorScheme.primary,
+                                fontSize = 18.sp,
+                                style = EditorialType.cardTitle
+                            )
                         }
+                    }
+
+                    if (enableScrollbar) {
+                        LibraryFastScroller(
+                            state = tabGridState,
+                            labelForIndex = { index ->
+                                stickyHeaderForItem(tab, index)?.label
+                            },
+                            modifier = Modifier
+                                .align(Alignment.CenterEnd)
+                                .fillMaxHeight()
+                                .width(24.dp)
+                                .padding(vertical = 6.dp)
+                        )
                     }
                 }
             }
         }
+    }
+}
 
+/**
+ * Thin draggable strip on the right edge. While dragging it shows the current section
+ * letter/date in a bubble; the bubble disappears 1.5s after the finger lifts.
+ */
+@Composable
+private fun LibraryFastScroller(
+    state: LazyGridState,
+    labelForIndex: (Int) -> String?,
+    modifier: Modifier = Modifier
+) {
+    val scope = rememberCoroutineScope()
+    var dragging by remember { mutableStateOf(false) }
+    var showBubble by remember { mutableStateOf(false) }
+
+    BoxWithConstraints(modifier = modifier) {
+        val total = state.layoutInfo.totalItemsCount
+        val visible = state.layoutInfo.visibleItemsInfo.size
+        val firstIndex = state.firstVisibleItemIndex
+        val maxIndex = (total - 1).coerceAtLeast(1)
+        val fraction = (firstIndex.toFloat() / maxIndex).coerceIn(0f, 1f)
+        val label = labelForIndex(firstIndex)
+        val accent = MaterialTheme.colorScheme.primary
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .pointerInput(total, constraints.maxHeight) {
+                    if (total <= 0) return@pointerInput
+
+                    fun scrollTo(y: Float) {
+                        val targetFraction = (y / size.height.toFloat()).coerceIn(0f, 1f)
+                        val target = (targetFraction * (total - 1)).toInt().coerceIn(0, total - 1)
+                        scope.launch {
+                            state.scrollToItem(target)
+                        }
+                    }
+
+                    detectVerticalDragGestures(
+                        onDragStart = { offset ->
+                            dragging = true
+                            showBubble = true
+                            scrollTo(offset.y)
+                        },
+                        onDragEnd = {
+                            dragging = false
+                            scope.launch {
+                                delay(1500)
+                                if (!dragging) showBubble = false
+                            }
+                        },
+                        onDragCancel = {
+                            dragging = false
+                            scope.launch {
+                                delay(1500)
+                                if (!dragging) showBubble = false
+                            }
+                        }
+                    ) { change, _ ->
+                        scrollTo(change.position.y)
+                    }
+                }
+        ) {
+            androidx.compose.foundation.Canvas(modifier = Modifier.fillMaxSize()) {
+                val stripWidth = 3.dp.toPx()
+                val x = (size.width - stripWidth) / 2f
+                val corner = stripWidth / 2f
+
+                drawRoundRect(
+                    color = Color.White.copy(alpha = 0.10f),
+                    topLeft = Offset(x, 0f),
+                    size = Size(stripWidth, size.height),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner)
+                )
+
+                val thumbHeight = (size.height * (visible.toFloat() / total.coerceAtLeast(1)))
+                    .coerceAtLeast(48.dp.toPx())
+                    .coerceAtMost(size.height)
+                val thumbTop = (size.height - thumbHeight) * fraction
+
+                drawRoundRect(
+                    color = accent.copy(alpha = if (dragging) 0.95f else 0.45f),
+                    topLeft = Offset(x, thumbTop),
+                    size = Size(stripWidth, thumbHeight),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(corner, corner)
+                )
+            }
+        }
+
+        if (showBubble && label != null) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .offset(x = (-34).dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.primary)
+                    .padding(horizontal = 10.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = label,
+                    color = MaterialTheme.colorScheme.onPrimary,
+                    fontSize = 14.sp,
+                    style = EditorialType.cardTitle
+                )
+            }
+        }
     }
 }
 
@@ -250,7 +395,7 @@ private fun LibraryTabsRow(
         modifier = modifier
             .fillMaxWidth()
             .padding(top = 4.dp, bottom = 6.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp),
+        contentPadding = PaddingValues(horizontal = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         itemsIndexed(

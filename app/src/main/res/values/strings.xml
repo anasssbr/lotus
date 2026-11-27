@@ -445,8 +445,38 @@
     <string name="home_most_played">Most played</string>
     <string name="home_no_history">Play some music and your top tracks will show up here.</string>
     <string name="home_no_tracks">No tracks yet. Scan a folder in Library to get started.</string>
+    <string name="home_good_morning">Good morning</string>
+    <string name="home_good_afternoon">Good afternoon</string>
+    <string name="home_good_evening">Good evening</string>
+    <string name="home_continue_listening">Continue listening</string>
+    <string name="home_quick_picks">Quick Picks</string>
+    <string name="home_jump_back_in">Jump back in</string>
+    <string name="home_rediscover">Rediscover</string>
+    <string name="home_pick_something">Pick something to play</string>
+    <string name="home_shuffle_all">Shuffle all</string>
+    <string name="home_vs_yesterday">%1$s vs yesterday</string>
+    <string name="home_same_as_yesterday">Same as yesterday</string>
+    <string name="home_tracks_count">%1$d tracks</string>
+    <string name="home_shuffle_mix">Shuffle My Mix</string>
+    <string name="settings_name_label">Your name</string>
+    <string name="settings_name_supporting">Shown in the Home greeting</string>
+    <plurals name="home_day_streak">
+        <item quantity="one">%1$d-day streak</item>
+        <item quantity="other">%1$d-day streak</item>
+    </plurals>
     <plurals name="home_play_count">
         <item quantity="one">%1$d play</item>
         <item quantity="other">%1$d plays</item>
     </plurals>
+
+    <!-- Library screen -->
+    <string name="library_counts">%1$s TRACKS · %2$s ALBUMS · %3$s ARTISTS</string>
+    <string name="library_add_playlist_hint">Start a new collection</string>
+    <string name="library_no_playlists">No playlists yet. Create one to collect your favorites.</string>
+    <string name="library_no_tracks">No tracks yet. Scan a folder to get started.</string>
+    <string name="library_no_albums">No albums yet. Tracks with album info will show up here.</string>
+    <string name="library_no_artists">No artists yet. Tracks with artist info will show up here.</string>
+    <string name="library_no_genres">No genres yet. Tag your tracks to browse by genre.</string>
+    <string name="library_no_folders">No folders yet. Scanned folders will show up here.</string>
+    <string name="library_no_results">Nothing matches your search.</string>
 </resources>

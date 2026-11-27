@@ -54,7 +54,6 @@ import androidx.compose.material.icons.rounded.GridView
 import androidx.compose.material.icons.rounded.Image
 import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.MyLocation
-import androidx.compose.material.icons.rounded.MusicNote
 import androidx.compose.material.icons.rounded.Search
 import androidx.compose.material.icons.rounded.SelectAll
 import androidx.compose.material.icons.rounded.Settings
@@ -88,6 +87,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -136,8 +137,19 @@ import com.dn0ne.player.app.presentation.components.playlist.MutablePlaylist
 import com.dn0ne.player.app.presentation.components.playlist.NewPlaylistScreen
 import com.dn0ne.player.app.presentation.components.playlist.Playlist
 import com.dn0ne.player.app.presentation.components.playlist.RenamePlaylistBottomSheet
-import com.dn0ne.player.app.presentation.components.playlist.playlistCards
-import com.dn0ne.player.app.presentation.components.playlist.playlistRows
+import com.dn0ne.player.app.presentation.components.design.EditorialTiny
+import com.dn0ne.player.app.presentation.components.design.EditorialType
+import com.dn0ne.player.app.presentation.components.library.LibraryRoundIconButton
+import com.dn0ne.player.app.presentation.components.library.LibraryStickyHeader
+import com.dn0ne.player.app.presentation.components.library.formatLibraryCount
+import com.dn0ne.player.app.presentation.components.library.libraryAlbumCards
+import com.dn0ne.player.app.presentation.components.library.libraryArtistCards
+import com.dn0ne.player.app.presentation.components.library.libraryFolderRows
+import com.dn0ne.player.app.presentation.components.library.libraryGenreCards
+import com.dn0ne.player.app.presentation.components.library.libraryPlaylistCards
+import com.dn0ne.player.app.presentation.components.library.libraryPlaylistRows
+import com.dn0ne.player.app.presentation.components.library.librarySectionLabel
+import com.dn0ne.player.app.presentation.components.library.libraryTracks
 import com.dn0ne.player.app.presentation.components.selection.selectionCards
 import com.dn0ne.player.app.presentation.components.selection.selectionList
 import com.dn0ne.player.app.presentation.components.selection.selectionRows
@@ -154,7 +166,6 @@ import com.dn0ne.player.ui.theme.Typography
 import com.dn0ne.player.app.presentation.components.topbar.LazyGridWithCollapsibleTabsTopBar
 import com.dn0ne.player.app.presentation.components.topbar.Tab
 import com.dn0ne.player.app.presentation.components.topbar.TopBarContent
-import com.dn0ne.player.app.presentation.components.trackList
 import com.dn0ne.player.app.presentation.components.trackinfo.BulkTagFixScreen
 import com.dn0ne.player.app.presentation.components.trackinfo.SearchField
 import com.dn0ne.player.app.presentation.components.trackinfo.TrackInfoSheet
@@ -498,6 +509,7 @@ fun PlayerScreen(
                     composable<PlayerRoutes.Home> {
                         val homeState by homeViewModel.state.collectAsState()
                         val homeTrackList by viewModel.trackList.collectAsState()
+                        val userName by viewModel.settings.name.collectAsState()
 
                         LaunchedEffect(homeTrackList) {
                             homeViewModel.refresh(homeTrackList)
@@ -505,6 +517,10 @@ fun PlayerScreen(
 
                         HomeScreen(
                             state = homeState,
+                            userName = userName,
+                            nowPlayingTrack = currentTrack,
+                            isPlaying = playbackState.isPlaying,
+                            position = playbackState.position,
                             onSearchClick = {
                                 openSearchOnLibrary = true
                                 navController.navigate(PlayerRoutes.Main) {
@@ -512,6 +528,9 @@ fun PlayerScreen(
                                     launchSingleTop = true
                                     restoreState = true
                                 }
+                            },
+                            onSettingsClick = {
+                                viewModel.onEvent(PlayerScreenEvent.OnSettingsClick)
                             },
                             onTrackClick = { queue, track ->
                                 viewModel.onEvent(
@@ -532,6 +551,31 @@ fun PlayerScreen(
                                     )
                                 }
                             },
+                            onShuffleAllClick = {
+                                if (homeTrackList.isNotEmpty()) {
+                                    val shuffled = homeTrackList.shuffled()
+                                    viewModel.onEvent(
+                                        PlayerScreenEvent.OnTrackClick(
+                                            track = shuffled.first(),
+                                            playlist = Playlist(name = null, trackList = shuffled)
+                                        )
+                                    )
+                                }
+                            },
+                            onOpenNowPlaying = {
+                                viewModel.onEvent(
+                                    PlayerScreenEvent.OnPlayerExpandedChange(true)
+                                )
+                            },
+                            onTogglePlayback = {
+                                viewModel.onEvent(
+                                    if (playbackState.isPlaying) {
+                                        PlayerScreenEvent.OnPauseClick
+                                    } else {
+                                        PlayerScreenEvent.OnPlayClick
+                                    }
+                                )
+                            },
                             onScrollOffsetChange = {
                                 backgroundScrollOffset.floatValue = it
                             },
@@ -551,7 +595,7 @@ fun PlayerScreen(
 
                         val tabs by viewModel.settings.tabs.collectAsState()
                         var selectedTab by rememberSaveable {
-                            mutableStateOf(viewModel.settings.defaultTab)
+                            mutableStateOf(viewModel.settings.lastLibraryTab)
                         }
 
                         val gridStates = rememberSaveable(saver = GridStatesSaver) {
@@ -602,13 +646,14 @@ fun PlayerScreen(
                         MainPlayerScreen(
                             gridStates = gridStates,
                             topBarTabs = tabs,
-                            defaultTab = viewModel.settings.defaultTab,
+                            defaultTab = viewModel.settings.lastLibraryTab,
                             isPlaying = playbackState.isPlaying,
                             onScrollOffsetChange = {
                                 backgroundScrollOffset.floatValue = it
                             },
                             onTabChange = {
                                 selectedTab = it
+                                viewModel.settings.lastLibraryTab = it
                             },
                             openSearchOnLibrary = openSearchOnLibrary,
                             onSearchOpened = { openSearchOnLibrary = false },
@@ -1520,6 +1565,27 @@ fun MainPlayerScreen(
         }
     }
 
+    val visibleTracks = trackList.filterTracks(searchFieldValue)
+    val isSearching = searchFieldValue.isNotBlank()
+    val emptyTracksMessage = context.resources.getString(
+        if (isSearching) R.string.library_no_results else R.string.library_no_tracks
+    )
+    val emptyPlaylistsMessage = context.resources.getString(
+        if (isSearching) R.string.library_no_results else R.string.library_no_playlists
+    )
+    val emptyAlbumsMessage = context.resources.getString(
+        if (isSearching) R.string.library_no_results else R.string.library_no_albums
+    )
+    val emptyArtistsMessage = context.resources.getString(
+        if (isSearching) R.string.library_no_results else R.string.library_no_artists
+    )
+    val emptyGenresMessage = context.resources.getString(
+        if (isSearching) R.string.library_no_results else R.string.library_no_genres
+    )
+    val emptyFoldersMessage = context.resources.getString(
+        if (isSearching) R.string.library_no_results else R.string.library_no_folders
+    )
+
     LazyGridWithCollapsibleTabsTopBar(
         gridStates = gridStates,
         topBarTabs = topBarTabs,
@@ -1534,6 +1600,20 @@ fun MainPlayerScreen(
 
             onTabChange(it)
         },
+        stickyHeaderForItem = { tab, index ->
+            if (tab == Tab.Tracks && !isInSelectionMode) {
+                val track = visibleTracks.getOrNull(index)
+                if (track != null) {
+                    val label = librarySectionLabel(track, trackSort)
+                    val previousLabel = visibleTracks.getOrNull(index - 1)
+                        ?.let { librarySectionLabel(it, trackSort) }
+                    LibraryStickyHeader(
+                        label = label,
+                        isSectionStart = label != previousLabel
+                    )
+                } else null
+            } else null
+        },
         showTabsRow = topBarContent == TopBarContent.Default,
         tabTitleTextStyle = MaterialTheme.typography.titleLarge.copy(
             fontWeight = FontWeight.Bold
@@ -1544,63 +1624,105 @@ fun MainPlayerScreen(
                 label = "top-bar-search-bar-animation",
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
+                    .padding(horizontal = 0.dp, vertical = 0.dp)
                     .align(Alignment.BottomCenter)
             ) { state ->
                 when (state) {
                     TopBarContent.Default -> {
-                        Column(modifier = Modifier.fillMaxWidth()) {
+                        val countsLabel = stringResource(
+                            R.string.library_counts,
+                            formatLibraryCount(trackList.size),
+                            formatLibraryCount(albumPlaylists.size),
+                            formatLibraryCount(artistPlaylists.size)
+                        )
+                        val headerHeight = lerp(136.dp, 64.dp, collapseFraction)
+                        val titleScale = 1f - collapseFraction * 0.41f
+                        val countsAlpha = (1f - collapseFraction * 1.8f).coerceIn(0f, 1f)
+                        val actionsAlpha = (1f - collapseFraction * 2.2f).coerceIn(0f, 1f)
+
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(headerHeight)
+                                .clipToBounds()
+                        ) {
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(start = 20.dp, end = 6.dp, top = 10.dp),
+                                    .padding(
+                                        start = 20.dp,
+                                        end = 12.dp,
+                                        top = lerp(8.dp, 14.dp, collapseFraction)
+                                    ),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(
-                                    imageVector = Icons.Rounded.MusicNote,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(22.dp)
-                                )
-
-                                Spacer(modifier = Modifier.width(10.dp))
-
                                 Text(
-                                    text = stringResource(R.string.your_library),
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.graphicsLayer {
-                                        val fraction = collapseFraction
-                                        alpha = 1f - fraction * 0.85f
-                                        val scale = 1f - fraction * 0.12f
-                                        scaleX = scale
-                                        scaleY = scale
-                                        transformOrigin = TransformOrigin(0f, 0.5f)
-                                    }
+                                    text = stringResource(R.string.nav_library),
+                                    style = EditorialType.display,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .graphicsLayer {
+                                            scaleX = titleScale
+                                            scaleY = titleScale
+                                            transformOrigin = TransformOrigin(0f, 0f)
+                                        }
                                 )
 
-                                Spacer(modifier = Modifier.weight(1f))
-
-                                IconButton(
+                                LibraryRoundIconButton(
+                                    icon = if (replaceSearchWithFilter && tab == Tab.Tracks) {
+                                        Icons.Rounded.FilterList
+                                    } else Icons.Rounded.Search,
+                                    contentDescription = context.resources.getString(
+                                        R.string.track_search
+                                    ),
                                     onClick = {
                                         showSearchField = true
                                     }
-                                ) {
-                                    Icon(
-                                        imageVector = if (replaceSearchWithFilter && tab == Tab.Tracks) {
-                                            Icons.Rounded.FilterList
-                                        } else Icons.Rounded.Search,
+                                )
+
+                                if (tab != Tab.Tracks && tab != Tab.Folders) {
+                                    Spacer(modifier = Modifier.width(8.dp))
+
+                                    LibraryRoundIconButton(
+                                        icon = if (gridPlaylists) {
+                                            Icons.Rounded.GridView
+                                        } else Icons.AutoMirrored.Rounded.ViewList,
                                         contentDescription = context.resources.getString(
-                                            R.string.track_search
-                                        )
+                                            if (gridPlaylists) {
+                                                R.string.enable_list_view
+                                            } else R.string.enable_grid_view
+                                        ),
+                                        onClick = onGridPlaylistsClick
                                     )
                                 }
+
+                                Spacer(modifier = Modifier.width(8.dp))
+
+                                LibraryRoundIconButton(
+                                    icon = Icons.Rounded.Settings,
+                                    contentDescription = context.resources.getString(
+                                        R.string.settings
+                                    ),
+                                    onClick = onSettingsClick
+                                )
                             }
+
+                            Text(
+                                text = countsLabel,
+                                style = EditorialType.tiny,
+                                color = EditorialTiny,
+                                maxLines = 1,
+                                modifier = Modifier
+                                    .padding(start = 20.dp, top = 4.dp)
+                                    .alpha(countsAlpha)
+                            )
 
                             Row(
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .padding(horizontal = 12.dp),
+                                    .padding(start = 12.dp, end = 12.dp, top = 6.dp)
+                                    .alpha(actionsAlpha),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 if (tab == Tab.Tracks) {
@@ -1631,57 +1753,25 @@ fun MainPlayerScreen(
 
                                 Spacer(modifier = Modifier.weight(1f))
 
-                                IconButton(
-                                    onClick = onSettingsClick
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Settings,
-                                        contentDescription = context.resources.getString(
-                                            R.string.settings
-                                        )
-                                    )
-                                }
-
-                                if (tab != Tab.Tracks) {
-                                    IconButton(
-                                        onClick = onGridPlaylistsClick
-                                    ) {
-                                        Icon(
-                                            imageVector = if (gridPlaylists) {
-                                                Icons.Rounded.GridView
-                                            } else Icons.AutoMirrored.Rounded.ViewList,
-                                            contentDescription = context.resources.getString(
-                                                if (gridPlaylists) {
-                                                    R.string.enable_list_view
-                                                } else R.string.enable_grid_view
-                                            )
-                                        )
-                                    }
-                                }
-
                                 if (tab == Tab.Tracks) {
-                                    IconButton(
+                                    LibraryRoundIconButton(
+                                        icon = Icons.Rounded.AutoFixHigh,
+                                        contentDescription = context.resources.getString(
+                                            R.string.fix_missing_album_info
+                                        ),
                                         onClick = onBulkTagFixClick
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Rounded.AutoFixHigh,
-                                            contentDescription = context.resources.getString(
-                                                R.string.fix_missing_album_info
-                                            )
-                                        )
-                                    }
+                                    )
+
+                                    Spacer(modifier = Modifier.width(8.dp))
                                 }
 
-                                IconButton(
+                                LibraryRoundIconButton(
+                                    icon = Icons.Rounded.Download,
+                                    contentDescription = context.resources.getString(
+                                        R.string.download_title
+                                    ),
                                     onClick = onDownloadClick
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Rounded.Download,
-                                        contentDescription = context.resources.getString(
-                                            R.string.download_title
-                                        )
-                                    )
-                                }
+                                )
                             }
                         }
                     }
@@ -1948,15 +2038,19 @@ fun MainPlayerScreen(
             collapseFraction = it
         },
         onScrollOffsetChange = onScrollOffsetChange,
-        contentHorizontalArrangement = Arrangement.spacedBy(
-            16.dp,
-            alignment = Alignment.CenterHorizontally
-        ),
+        contentHorizontalArrangement = Arrangement.spacedBy(12.dp),
         contentVerticalArrangement = Arrangement.spacedBy(4.dp),
-        contentPadding = PaddingValues(horizontal = 16.dp),
-        gridCells = {
-            if (it == Tab.Tracks || !gridPlaylists) GridCells.Fixed(1) else {
-                GridCells.Adaptive(150.dp)
+        contentPadding = PaddingValues(
+            start = 20.dp,
+            end = 20.dp,
+            top = 2.dp,
+            bottom = 120.dp
+        ),
+        gridCells = { tab ->
+            when {
+                tab == Tab.Tracks || tab == Tab.Folders || !gridPlaylists -> GridCells.Fixed(1)
+                tab == Tab.Artists -> GridCells.Fixed(3)
+                else -> GridCells.Fixed(2)
             }
         },
         modifier = Modifier
@@ -1966,17 +2060,19 @@ fun MainPlayerScreen(
         when (tab) {
             Tab.Tracks -> {
                 if (!isInSelectionMode) {
-                    trackList(
-                        trackList = trackList.filterTracks(searchFieldValue),
+                    libraryTracks(
+                        tracks = visibleTracks,
+                        sort = trackSort,
                         currentTrack = currentTrack,
                         isPlaying = isPlaying,
+                        emptyMessage = emptyTracksMessage,
                         onTrackClick = {
                             onTrackClick(
                                 it,
                                 Playlist(
                                     name = null,
                                     trackList = if (replaceSearchWithFilter) {
-                                        trackList.filterTracks(searchFieldValue)
+                                        visibleTracks
                                     } else trackList
                                 )
                             )
@@ -2001,7 +2097,7 @@ fun MainPlayerScreen(
                     )
                 } else {
                     selectionList(
-                        trackList = trackList.filterTracks(searchFieldValue),
+                        trackList = visibleTracks,
                         selectedTracks = selectedTracks,
                         onTrackClick = {
                             if (it in selectedTracks) {
@@ -2029,12 +2125,12 @@ fun MainPlayerScreen(
 
                 if (gridPlaylists) {
                     if (!isInSelectionMode) {
-                        playlistCards(
+                        libraryPlaylistCards(
                             playlists = playlists.filterPlaylists(searchFieldValue),
+                            fallbackTitle = context.resources.getString(R.string.unknown),
                             sort = playlistSort,
                             sortOrder = playlistSortOrder,
-                            fallbackPlaylistTitle = context.resources.getString(R.string.unknown),
-                            showSinglePreview = false,
+                            emptyMessage = emptyPlaylistsMessage,
                             onCardClick = onPlaylistSelection,
                             onLongClick = {
                                 isInSelectionMode = true
@@ -2062,12 +2158,18 @@ fun MainPlayerScreen(
                     }
                 } else {
                     if (!isInSelectionMode) {
-                        playlistRows(
+                        libraryPlaylistRows(
                             playlists = playlists.filterPlaylists(searchFieldValue),
+                            fallbackTitle = context.resources.getString(R.string.unknown),
                             sort = playlistSort,
                             sortOrder = playlistSortOrder,
-                            fallbackPlaylistTitle = context.resources.getString(R.string.unknown),
-                            showSinglePreview = false,
+                            emptyMessage = emptyPlaylistsMessage,
+                            subtitle = {
+                                context.resources.getString(
+                                    R.string.home_tracks_count,
+                                    it.trackList.size
+                                )
+                            },
                             onRowClick = onPlaylistSelection,
                             onLongClick = {
                                 isInSelectionMode = true
@@ -2099,12 +2201,13 @@ fun MainPlayerScreen(
             Tab.Albums -> {
                 if (gridPlaylists) {
                     if (!isInSelectionMode) {
-                        playlistCards(
+                        libraryAlbumCards(
                             playlists = albumPlaylists.filterPlaylists(searchFieldValue),
+                            fallbackTitle = context.resources.getString(R.string.unknown_album),
+                            fallbackArtist = context.resources.getString(R.string.unknown_artist),
                             sort = playlistSort,
                             sortOrder = playlistSortOrder,
-                            fallbackPlaylistTitle = context.resources.getString(R.string.unknown_album),
-                            showSinglePreview = true,
+                            emptyMessage = emptyAlbumsMessage,
                             onCardClick = onAlbumPlaylistSelection,
                             onLongClick = {
                                 isInSelectionMode = true
@@ -2132,12 +2235,16 @@ fun MainPlayerScreen(
                     }
                 } else {
                     if (!isInSelectionMode) {
-                        playlistRows(
+                        libraryPlaylistRows(
                             playlists = albumPlaylists.filterPlaylists(searchFieldValue),
+                            fallbackTitle = context.resources.getString(R.string.unknown_album),
                             sort = playlistSort,
                             sortOrder = playlistSortOrder,
-                            fallbackPlaylistTitle = context.resources.getString(R.string.unknown_album),
-                            showSinglePreview = true,
+                            emptyMessage = emptyAlbumsMessage,
+                            subtitle = {
+                                it.trackList.firstOrNull()?.artist
+                                    ?: context.resources.getString(R.string.unknown_artist)
+                            },
                             onRowClick = onAlbumPlaylistSelection,
                             onLongClick = {
                                 isInSelectionMode = true
@@ -2169,11 +2276,12 @@ fun MainPlayerScreen(
             Tab.Artists -> {
                 if (gridPlaylists) {
                     if (!isInSelectionMode) {
-                        playlistCards(
+                        libraryArtistCards(
                             playlists = artistPlaylists.filterPlaylists(searchFieldValue),
+                            fallbackTitle = context.resources.getString(R.string.unknown_artist),
                             sort = playlistSort,
                             sortOrder = playlistSortOrder,
-                            fallbackPlaylistTitle = context.resources.getString(R.string.unknown_artist),
+                            emptyMessage = emptyArtistsMessage,
                             onCardClick = onArtistPlaylistSelection,
                             onLongClick = {
                                 isInSelectionMode = true
@@ -2200,11 +2308,18 @@ fun MainPlayerScreen(
                     }
                 } else {
                     if (!isInSelectionMode) {
-                        playlistRows(
+                        libraryPlaylistRows(
                             playlists = artistPlaylists.filterPlaylists(searchFieldValue),
+                            fallbackTitle = context.resources.getString(R.string.unknown_artist),
                             sort = playlistSort,
                             sortOrder = playlistSortOrder,
-                            fallbackPlaylistTitle = context.resources.getString(R.string.unknown_artist),
+                            emptyMessage = emptyArtistsMessage,
+                            subtitle = {
+                                context.resources.getString(
+                                    R.string.home_tracks_count,
+                                    it.trackList.size
+                                )
+                            },
                             onRowClick = onArtistPlaylistSelection,
                             onLongClick = {
                                 isInSelectionMode = true
@@ -2235,11 +2350,12 @@ fun MainPlayerScreen(
             Tab.Genres -> {
                 if (gridPlaylists) {
                     if (!isInSelectionMode) {
-                        playlistCards(
+                        libraryGenreCards(
                             playlists = genrePlaylists.filterPlaylists(searchFieldValue),
+                            fallbackTitle = context.resources.getString(R.string.unknown_genre),
                             sort = playlistSort,
                             sortOrder = playlistSortOrder,
-                            fallbackPlaylistTitle = context.resources.getString(R.string.unknown_genre),
+                            emptyMessage = emptyGenresMessage,
                             onCardClick = onGenrePlaylistSelection,
                             onLongClick = {
                                 isInSelectionMode = true
@@ -2266,11 +2382,18 @@ fun MainPlayerScreen(
                     }
                 } else {
                     if (!isInSelectionMode) {
-                        playlistRows(
+                        libraryPlaylistRows(
                             playlists = genrePlaylists.filterPlaylists(searchFieldValue),
+                            fallbackTitle = context.resources.getString(R.string.unknown_genre),
                             sort = playlistSort,
                             sortOrder = playlistSortOrder,
-                            fallbackPlaylistTitle = context.resources.getString(R.string.unknown_genre),
+                            emptyMessage = emptyGenresMessage,
+                            subtitle = {
+                                context.resources.getString(
+                                    R.string.home_tracks_count,
+                                    it.trackList.size
+                                )
+                            },
                             onRowClick = onGenrePlaylistSelection,
                             onLongClick = {
                                 isInSelectionMode = true
@@ -2299,68 +2422,53 @@ fun MainPlayerScreen(
             }
 
             Tab.Folders -> {
-                if (gridPlaylists) {
-                    if (!isInSelectionMode) {
-                        playlistCards(
-                            playlists = folderPlaylists.filterPlaylists(searchFieldValue),
-                            sort = playlistSort,
-                            sortOrder = playlistSortOrder,
-                            fallbackPlaylistTitle = context.resources.getString(R.string.unknown_folder),
-                            onCardClick = onFolderPlaylistSelection,
-                            onLongClick = {
-                                isInSelectionMode = true
-                                selectedPlaylists.add(it)
-                            }
-                        )
-                    } else {
-                        selectionCards(
-                            playlists = folderPlaylists.filterPlaylists(searchFieldValue),
-                            selectedPlaylists = selectedPlaylists,
-                            sort = playlistSort,
-                            sortOrder = playlistSortOrder,
-                            fallbackPlaylistTitle = context.resources.getString(R.string.unknown_folder),
-                            onCardClick = {
-                                if (it in selectedPlaylists) {
-                                    selectedPlaylists.remove(it)
-                                } else selectedPlaylists.add(it)
+                if (!isInSelectionMode) {
+                    libraryFolderRows(
+                        playlists = folderPlaylists.filterPlaylists(searchFieldValue),
+                        fallbackTitle = context.resources.getString(R.string.unknown_folder),
+                        sort = playlistSort,
+                        sortOrder = playlistSortOrder,
+                        emptyMessage = emptyFoldersMessage,
+                        onRowClick = onFolderPlaylistSelection,
+                        onLongClick = {
+                            isInSelectionMode = true
+                            selectedPlaylists.add(it)
+                        }
+                    )
+                } else if (gridPlaylists) {
+                    selectionCards(
+                        playlists = folderPlaylists.filterPlaylists(searchFieldValue),
+                        selectedPlaylists = selectedPlaylists,
+                        sort = playlistSort,
+                        sortOrder = playlistSortOrder,
+                        fallbackPlaylistTitle = context.resources.getString(R.string.unknown_folder),
+                        onCardClick = {
+                            if (it in selectedPlaylists) {
+                                selectedPlaylists.remove(it)
+                            } else selectedPlaylists.add(it)
 
-                                if (selectedPlaylists.isEmpty()) {
-                                    isInSelectionMode = false
-                                }
+                            if (selectedPlaylists.isEmpty()) {
+                                isInSelectionMode = false
                             }
-                        )
-                    }
+                        }
+                    )
                 } else {
-                    if (!isInSelectionMode) {
-                        playlistRows(
-                            playlists = folderPlaylists.filterPlaylists(searchFieldValue),
-                            sort = playlistSort,
-                            sortOrder = playlistSortOrder,
-                            fallbackPlaylistTitle = context.resources.getString(R.string.unknown_folder),
-                            onRowClick = onFolderPlaylistSelection,
-                            onLongClick = {
-                                isInSelectionMode = true
-                                selectedPlaylists.add(it)
-                            }
-                        )
-                    } else {
-                        selectionRows(
-                            playlists = folderPlaylists.filterPlaylists(searchFieldValue),
-                            selectedPlaylists = selectedPlaylists,
-                            sort = playlistSort,
-                            sortOrder = playlistSortOrder,
-                            fallbackPlaylistTitle = context.resources.getString(R.string.unknown_folder),
-                            onRowClick = {
-                                if (it in selectedPlaylists) {
-                                    selectedPlaylists.remove(it)
-                                } else selectedPlaylists.add(it)
+                    selectionRows(
+                        playlists = folderPlaylists.filterPlaylists(searchFieldValue),
+                        selectedPlaylists = selectedPlaylists,
+                        sort = playlistSort,
+                        sortOrder = playlistSortOrder,
+                        fallbackPlaylistTitle = context.resources.getString(R.string.unknown_folder),
+                        onRowClick = {
+                            if (it in selectedPlaylists) {
+                                selectedPlaylists.remove(it)
+                            } else selectedPlaylists.add(it)
 
-                                if (selectedPlaylists.isEmpty()) {
-                                    isInSelectionMode = false
-                                }
+                            if (selectedPlaylists.isEmpty()) {
+                                isInSelectionMode = false
                             }
-                        )
-                    }
+                        }
+                    )
                 }
             }
         }

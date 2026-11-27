@@ -27,6 +27,10 @@ data class HomeState(
     val mix: List<Track> = emptyList(),
     val week: List<DailyListening> = emptyList(),
     val todaySeconds: Long = 0L,
+    val yesterdaySeconds: Long = 0L,
+    val streakDays: Int = 0,
+    val rediscover: List<Track> = emptyList(),
+    val libraryTrackCount: Int = 0,
     val mostPlayed: List<HomeTrack> = emptyList(),
     val hasHistory: Boolean = false,
     val hasTracks: Boolean = true,
@@ -59,11 +63,20 @@ class HomeViewModel(
     }
 
     private suspend fun buildState(tracks: List<Track>): HomeState {
+        val last60 = listeningHistoryRepository.getListeningSecondsPerDay(60)
+        val week = last60.takeLast(7)
+        val todaySeconds = week.lastOrNull()?.seconds ?: 0L
+        val yesterdaySeconds = week.getOrNull(week.lastIndex - 1)?.seconds ?: 0L
+        val streak = computeStreakDays(last60)
+
         if (tracks.isEmpty()) {
             return HomeState(
                 hasTracks = false,
                 isLoading = false,
-                week = listeningHistoryRepository.getListeningSecondsPerDay(7)
+                week = week,
+                todaySeconds = todaySeconds,
+                yesterdaySeconds = yesterdaySeconds,
+                streakDays = streak
             )
         }
 
@@ -86,12 +99,22 @@ class HomeViewModel(
             }
             .take(8)
 
-        val week = listeningHistoryRepository.getListeningSecondsPerDay(7)
+        val cutoff = System.currentTimeMillis() - 30L * 24L * 60L * 60L * 1000L
+
+        val rediscover = listeningHistoryRepository
+            .getTracksNotPlayedSince(
+                cutoffMillis = cutoff,
+                candidateTrackUris = tracks.map { it.uri.toString() }
+            )
+            .mapNotNull { trackByUri[it] }
+            .distinctBy { it.uri }
+            .take(10)
 
         val mix = buildMix(
             tracks = tracks,
             trackByUri = trackByUri,
-            mostPlayedRaw = mostPlayedRaw
+            mostPlayedRaw = mostPlayedRaw,
+            cutoffMillis = cutoff
         )
 
         return HomeState(
@@ -99,7 +122,11 @@ class HomeViewModel(
             recentlyPlayedIsFallback = recentlyPlayed.isEmpty(),
             mix = mix,
             week = week,
-            todaySeconds = week.lastOrNull()?.seconds ?: 0L,
+            todaySeconds = todaySeconds,
+            yesterdaySeconds = yesterdaySeconds,
+            streakDays = streak,
+            rediscover = rediscover,
+            libraryTrackCount = tracks.size,
             mostPlayed = mostPlayed,
             hasHistory = recentRaw.isNotEmpty(),
             hasTracks = true,
@@ -107,10 +134,30 @@ class HomeViewModel(
         )
     }
 
+    /**
+     * Consecutive days with real listening time, counting back from today. An empty
+     * today does not break the streak yet, so yesterday still counts.
+     */
+    private fun computeStreakDays(days: List<DailyListening>): Int {
+        if (days.isEmpty()) return 0
+
+        var index = days.lastIndex
+        if (days[index].seconds <= 0L) index--
+
+        var count = 0
+        while (index >= 0 && days[index].seconds > 0L) {
+            count++
+            index--
+        }
+
+        return count
+    }
+
     private suspend fun buildMix(
         tracks: List<Track>,
         trackByUri: Map<String, Track>,
-        mostPlayedRaw: List<com.dn0ne.player.app.domain.listening.MostPlayedTrack>
+        mostPlayedRaw: List<com.dn0ne.player.app.domain.listening.MostPlayedTrack>,
+        cutoffMillis: Long
     ): List<Track> {
         val today = LocalDate.now().toEpochDay()
 
@@ -133,7 +180,7 @@ class HomeViewModel(
             .take(10)
             .forEach { mix += it }
 
-        val cutoff = System.currentTimeMillis() - 30L * 24L * 60L * 60L * 1000L
+        val cutoff = cutoffMillis
         listeningHistoryRepository
             .getTracksNotPlayedSince(
                 cutoffMillis = cutoff,

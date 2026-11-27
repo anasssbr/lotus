@@ -52,10 +52,13 @@ class Settings(context: Context) {
 
     private val tabOrderKey = "tab-order"
     private val defaultTabKey = "default-tab"
+    private val lastLibraryTabKey = "last-library-tab"
 
     private val jumpToBeginningKey = "jump-to-beginning"
 
     private val gridPlaylistsKey = "grid-playlists"
+
+    private val nameKey = "profile-name"
 
     var handleAudioFocus: Boolean
         get() = sharedPreferences.getBoolean(handleAudioFocusKey, true)
@@ -382,6 +385,20 @@ class Settings(context: Context) {
             }
         }
 
+    /**
+     * Last chip selected in the Library. Falls back to Tracks on first launch.
+     */
+    var lastLibraryTab: Tab
+        get() = Tab.entries.getOrElse(
+            sharedPreferences.getInt(lastLibraryTabKey, Tab.Tracks.ordinal)
+        ) { Tab.Tracks }
+        set(value) {
+            with(sharedPreferences.edit()) {
+                putInt(lastLibraryTabKey, value.ordinal)
+                apply()
+            }
+        }
+
     var jumpToBeginning: Boolean
         get() = sharedPreferences.getBoolean(jumpToBeginningKey, true)
         set(value) {
@@ -401,5 +418,22 @@ class Settings(context: Context) {
             putBoolean(gridPlaylistsKey, value)
             apply()
         }
+    }
+
+    private val _name = MutableStateFlow(
+        sharedPreferences.getString(nameKey, "").orEmpty()
+    )
+    val name = _name.asStateFlow()
+    fun updateName(value: String) {
+        val trimmed = value.take(MAX_NAME_LENGTH)
+        _name.update { trimmed }
+        with(sharedPreferences.edit()) {
+            putString(nameKey, trimmed)
+            apply()
+        }
+    }
+
+    private companion object {
+        const val MAX_NAME_LENGTH = 40
     }
 }
